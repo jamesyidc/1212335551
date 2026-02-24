@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>测试标签格式</title>
+</head>
+<body>
+    <h2>测试B-A-C标签格式</h2>
+    <script>
+        // 模拟波峰数据
+        const peak = {
+            b_point: { value: -19.24, beijing_time: "2026-02-18 01:45:48" },
+            a_point: { value: 34.96, beijing_time: "2026-02-18 03:14:41" },
+            c_point: { value: 6.56, beijing_time: "2026-02-18 04:07:47" }
+        };
+        
+        // 测试B点标签
+        const bLabel = {
+            name: "波峰1-B",
+            value: `B: ${peak.b_point.value.toFixed(1)}%`,
+            formatter: (params) => {
+                return `${params.name}\n${params.value}`;
+            }
+        };
+        
+        console.log("B点标签:");
+        console.log("  name:", bLabel.name);
+        console.log("  value:", bLabel.value);
+        console.log("  显示:", bLabel.formatter({ name: bLabel.name, value: bLabel.value }));
+        
+        // 测试A点标签
+        const aLabel = {
+            name: "波峰1-A",
+            value: `A: ${peak.a_point.value.toFixed(1)}%`,
+            formatter: (params) => {
+                return `${params.name}\n${params.value}`;
+            }
+        };
+        
+        console.log("\nA点标签:");
+        console.log("  name:", aLabel.name);
+        console.log("  value:", aLabel.value);
+        console.log("  显示:", aLabel.formatter({ name: aLabel.name, value: aLabel.value }));
+        
+        // 测试C点标签
+        const cLabel = {
+            name: "波峰1-C",
+            value: `C: ${peak.c_point.value.toFixed(1)}%`,
+            formatter: (params) => {
+                return `${params.name}\n${params.value}`;
+            }
+        };
+        
+        console.log("\nC点标签:");
+        console.log("  name:", cLabel.name);
+        console.log("  value:", cLabel.value);
+        console.log("  显示:", cLabel.formatter({ name: cLabel.name, value: cLabel.value }));
+        
+        document.write("<pre>");
+        document.write("B点: " + bLabel.formatter({ name: bLabel.name, value: bLabel.value }).replace("\n", " / ") + "\n");
+        document.write("A点: " + aLabel.formatter({ name: aLabel.name, value: aLabel.value }).replace("\n", " / ") + "\n");
+        document.write("C点: " + cLabel.formatter({ name: cLabel.name, value: cLabel.value }).replace("\n", " / ") + "\n");
+        document.write("</pre>");
+    </script>
+</body>
+</html>

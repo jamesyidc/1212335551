@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Tooltip Test - Manual Verification</title>
+    <style>
+        body { background: #1a1a2e; color: #fff; font-family: Arial; padding: 20px; }
+        .info { background: #16213e; padding: 20px; margin: 20px 0; border-radius: 8px; }
+        .success { color: #52c41a; }
+        .warning { color: #faad14; }
+        .error { color: #ff4d4f; }
+        h1 { color: #52c41a; }
+        h2 { color: #faad14; border-bottom: 2px solid #faad14; padding-bottom: 10px; }
+        code { background: #0f3460; padding: 2px 8px; border-radius: 4px; }
+        ol li { margin: 10px 0; line-height: 1.8; }
+        .highlight { background: #faad14; color: #000; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>✅ Tooltip 修复验证指南</h1>
+    
+    <div class="info">
+        <h2>🎯 修复说明</h2>
+        <p>问题原因：tooltip使用了首次渲染时保存的全局统计数据（192个点），而series使用的是当前渲染数据（可能被过滤），导致dataIndex不匹配。</p>
+        <p class="success">修复方案：tooltip改为使用当前渲染的sell24hData/sell2hData，确保与series data索引对齐。</p>
+    </div>
+
+    <div class="info">
+        <h2>📋 手动验证步骤</h2>
+        <ol>
+            <li><strong>打开页面</strong>: 访问 <a href="https://6000-iou7okyaq15h840cyuitp-c07dda5e.sandbox.novita.ai/price-position" target="_blank" style="color: #52c41a;">https://6000-iou7okyaq15h840cyuitp-c07dda5e.sandbox.novita.ai/price-position</a></li>
+            
+            <li><strong>打开开发者工具</strong>: 按 <code>F12</code> 或右键选择"检查"</li>
+            
+            <li><strong>切换到Console标签</strong>: 查看页面版本 <span class="highlight">v2.0.1-tooltip-fix</span></li>
+            
+            <li><strong>查看控制台输出</strong>: 找到类似以下的日志：
+                <pre style="background: #0f3460; padding: 10px; border-radius: 4px; margin: 10px 0;">
+🔍 sell24hData最后5个值: [190, 190, 190, 189, 189]
+🔍 sell2hData最后5个值: [0, 0, 0, 0, 0]
+📊 实时统计更新: {sell_24h: 189, sell_2h: 0}</pre>
+            </li>
+            
+            <li><strong>鼠标悬停在图表最右侧</strong>: 在"逃顶信号"图表的最后一个数据点上悬停</li>
+            
+            <li><strong>查看Console新增的日志</strong>: 应该看到：
+                <pre style="background: #0f3460; padding: 10px; border-radius: 4px; margin: 10px 0;">
+🎯 Tooltip[192]: 24h=189, 2h=0</pre>
+                <span class="success">（索引号可能不同，但24h和2h的值应该与实时统计一致）</span>
+            </li>
+            
+            <li><strong>查看Tooltip弹出框</strong>: 应该显示：
+                <div style="background: #fff; color: #000; padding: 15px; border-radius: 8px; margin: 10px 0; display: inline-block;">
+                    <div style="font-weight: bold; margin-bottom: 8px;">📅 2026-02-15 11:18:31</div>
+                    <div style="margin: 4px 0;">
+                        <span style="display:inline-block;width:10px;height:10px;background:#ff4d4f;border-radius:50%;margin-right:5px;"></span>
+                        24h逃顶: <strong>189</strong> 次
+                    </div>
+                    <div style="margin: 4px 0;">
+                        <span style="display:inline-block;width:10px;height:10px;background:#faad14;border-radius:50%;margin-right:5px;"></span>
+                        2h逃顶: <strong>0</strong> 次
+                    </div>
+                </div>
+            </li>
+        </ol>
+    </div>
+
+    <div class="info">
+        <h2>✅ 期望结果</h2>
+        <ul>
+            <li class="success">Tooltip显示的 <code>24h逃顶</code> 值应该是 <span class="highlight">189次</span>（不是79次）</li>
+            <li class="success">Tooltip显示的 <code>2h逃顶</code> 值应该是 <span class="highlight">0次</span></li>
+            <li class="success">Console日志中的值应该与Tooltip弹出框显示的值一致</li>
+            <li class="success">值应该与页面顶部的实时统计卡片一致</li>
+        </ul>
+    </div>
+
+    <div class="info">
+        <h2>❌ 如果仍然错误</h2>
+        <ul>
+            <li class="warning">清除浏览器缓存：<code>Ctrl+Shift+Delete</code>（或 <code>Cmd+Shift+Delete</code>）</li>
+            <li class="warning">硬刷新页面：<code>Ctrl+Shift+R</code>（或 <code>Cmd+Shift+R</code>）</li>
+            <li class="warning">使用隐身模式：<code>Ctrl+Shift+N</code>（Chrome）或 <code>Ctrl+Shift+P</code>（Firefox）</li>
+            <li class="error">截图Console完整输出（包括所有🔍日志和🎯 Tooltip日志）并报告问题</li>
+        </ul>
+    </div>
+
+    <div class="info" style="margin-top: 40px;">
+        <h2>📝 提交记录</h2>
+        <p>Commit: <code>0185ded</code></p>
+        <p>Message: fix: tooltip应使用当前渲染数据而非全局统计数据</p>
+        <p>Time: 2026-02-15 11:17 UTC</p>
+    </div>
+</body>
+</html>

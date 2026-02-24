@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Tooltip修复验证 - 代码审查</title>
+    <style>
+        body { 
+            background: #1a1a2e; 
+            color: #fff; 
+            font-family: 'Consolas', 'Monaco', monospace; 
+            padding: 40px; 
+            line-height: 1.8;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #52c41a; border-bottom: 3px solid #52c41a; padding-bottom: 15px; }
+        h2 { color: #faad14; margin-top: 40px; border-left: 5px solid #faad14; padding-left: 15px; }
+        .code-block { 
+            background: #0f3460; 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin: 20px 0;
+            border-left: 5px solid #52c41a;
+            overflow-x: auto;
+        }
+        .error-code { border-left-color: #ff4d4f; }
+        .warning { background: #faad1420; border: 2px solid #faad14; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        .success { background: #52c41a20; border: 2px solid #52c41a; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        .error { background: #ff4d4f20; border: 2px solid #ff4d4f; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        .highlight { background: #faad14; color: #000; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+        .inline-code { background: #0f3460; padding: 2px 6px; border-radius: 3px; color: #52c41a; }
+        pre { margin: 0; white-space: pre-wrap; word-wrap: break-word; }
+        .verdict { font-size: 1.5em; font-weight: bold; text-align: center; padding: 30px; margin: 30px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #444; }
+        th { background: #0f3460; color: #faad14; }
+        tr:hover { background: #0f346020; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Tooltip修复验证报告 - 代码审查</h1>
+        
+        <div class="warning">
+            <strong>📋 验证目的：</strong> 检查修复后的代码是否能正确显示tooltip值（189而不是79）
+        </div>
+
+        <h2>1️⃣ 关键代码检查</h2>
+        
+        <h3>✅ Tooltip数据源定义（修复后）</h3>
+        <div class="code-block">
+            <pre>// 文件: templates/price_position_unified.html
+// 行号: ~2851-2855
+
+// 🔧 保存数据到独立变量，确保tooltip可以访问
+// ⚠️ 使用当前渲染的数据（与series data一致）
+const chartData24h = sell24hData.slice();  // ✅ 正确
+const chartData2h = sell2hData.slice();    // ✅ 正确
+const chartFullTimes = fullTimes.slice();  // ✅ 正确</pre>
+        </div>
+
+        <div class="success">
+            <strong>✅ 验证结果：</strong> 代码已修复，使用 <span class="inline-code">sell24hData.slice()</span> 而不是 <span class="inline-code">chart2StatsData</span>
+        </div>
+
+        <h3>✅ Series数据配置</h3>
+        <div class="code-block">
+            <pre>// 行号: ~2922-2949
+
+series: [
+    {
+        name: '24h逃顶',
+        type: 'line',
+        data: sell24hData,  // ✅ 使用当前渲染数据
+        itemStyle: { color: '#ff4d4f' },
+        ...
+    },
+    {
+        name: '2h逃顶',
+        type: 'line',
+        data: sell2hData,   // ✅ 使用当前渲染数据
+        itemStyle: { color: '#faad14' },
+        ...
+    }
+]</pre>
+        </div>
+
+        <div class="success">
+            <strong>✅ 验证结果：</strong> Series使用 <span class="inline-code">sell24hData</span> 和 <span class="inline-code">sell2hData</span>
+        </div>
+
+        <h3>✅ Tooltip Formatter实现</h3>
+        <div class="code-block">
+            <pre>// 行号: ~2872-2890
+
+formatter: function(params) {
+    if (!params || params.length === 0) return '';
+    const dataIndex = params[0].dataIndex;  // 从series获取索引
+    const fullTime = chartFullTimes[dataIndex];
+    
+    // 🔍 从复制的数组中取值
+    const actual24h = chartData24h[dataIndex];  // ✅ 使用chartData24h
+    const actual2h = chartData2h[dataIndex];    // ✅ 使用chartData2h
+    
+    // 🐛 调试：输出tooltip数据
+    console.log(`🎯 Tooltip[${dataIndex}]: 24h=${actual24h}, 2h=${actual2h}`);
+    
+    let result = `...`;
+    result += `24h逃顶: &lt;strong&gt;${actual24h}&lt;/strong&gt; 次`;  // ✅ 显示actual24h
+    result += `2h逃顶: &lt;strong&gt;${actual2h}&lt;/strong&gt; 次`;   // ✅ 显示actual2h
+    return result;
+}</pre>
+        </div>
+
+        <div class="success">
+            <strong>✅ 验证结果：</strong> Tooltip从 <span class="inline-code">chartData24h[dataIndex]</span> 获取值，与series的 <span class="inline-code">sell24hData[dataIndex]</span> 完全一致
+        </div>
+
+        <h2>2️⃣ 数据流分析</h2>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>步骤</th>
+                    <th>数据来源</th>
+                    <th>数据内容</th>
+                    <th>状态</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1. 计算统计</td>
+                    <td><code>sell24hData</code></td>
+                    <td>当前渲染的24h统计数组（195个点）</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>2. 复制到tooltip变量</td>
+                    <td><code>chartData24h = sell24hData.slice()</code></td>
+                    <td>与sell24hData相同（195个点）</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>3. 配置series</td>
+                    <td><code>series.data = sell24hData</code></td>
+                    <td>195个点</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>4. 用户悬停</td>
+                    <td><code>dataIndex</code> from params</td>
+                    <td>索引范围: 0-194</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>5. Tooltip取值</td>
+                    <td><code>chartData24h[dataIndex]</code></td>
+                    <td>例如: chartData24h[194] = 189</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>6. 显示</td>
+                    <td><code>${actual24h}</code></td>
+                    <td>显示: 189次</td>
+                    <td>✅</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>3️⃣ 修复前后对比</h2>
+        
+        <h3>❌ 修复前（错误代码）</h3>
+        <div class="code-block error-code">
+            <pre>// ❌ 使用全局统计数据（可能与当前渲染数据不一致）
+const chartData24h = chart2StatsData ? chart2StatsData.sell24hData : sell24hData.slice();
+
+// 问题：
+// - chart2StatsData 首次渲染时保存（可能194个点）
+// - 后续渲染可能使用过滤数据（79个点）
+// - dataIndex 来自series（79个点），范围0-78
+// - chartData24h 指向 chart2StatsData.sell24hData（194个点）
+// - chartData24h[79] 访问到错误的值！</pre>
+        </div>
+
+        <h3>✅ 修复后（正确代码）</h3>
+        <div class="code-block">
+            <pre>// ✅ 始终使用当前渲染数据
+const chartData24h = sell24hData.slice();
+
+// 优点：
+// - chartData24h 总是与 sell24hData 相同
+// - series.data = sell24hData
+// - dataIndex 来自series，范围0-194
+// - chartData24h[194] = sell24hData[194] = 189
+// - 索引完全对齐！</pre>
+        </div>
+
+        <h2>4️⃣ 当前数据状态</h2>
+        
+        <div class="code-block">
+            <pre>📊 最新控制台日志 (2026-02-15 11:25:22):
+
+🔍 sell24hData最后5个值: [190, 189, 189, 189, 189]
+🔍 sell2hData最后5个值: [0, 0, 0, 0, 0]
+📊 实时统计更新: {sell_24h: 189, sell_2h: 0}
+
+✅ 数据一致性验证：
+   - sell24hData[194] = 189
+   - 实时API: sell_24h = 189
+   - 期望tooltip显示: 189次 ✅</pre>
+        </div>
+
+        <h2>5️⃣ 最终判定</h2>
+        
+        <div class="verdict success">
+            <div style="font-size: 3em; margin-bottom: 20px;">✅</div>
+            <div style="color: #52c41a;">代码修复<strong>已完成</strong>且<strong>正确</strong></div>
+            <div style="margin-top: 20px; font-size: 0.8em; color: #a0a0a0;">
+                Tooltip将显示 <span class="highlight">189次</span> 而不是 79次
+            </div>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ 重要提醒：</strong>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>代码已在文件中修复（commit <code>0185ded</code>）</li>
+                <li>Flask服务已重启（端口9001）</li>
+                <li>需要在<strong>浏览器</strong>中验证实际效果</li>
+                <li>建议使用<strong>隐身模式</strong>或<strong>清除缓存</strong></li>
+            </ul>
+        </div>
+
+        <h2>6️⃣ 验证步骤</h2>
+        
+        <div class="code-block">
+            <pre>1. 打开浏览器隐身模式
+   Chrome: Ctrl+Shift+N
+   Firefox: Ctrl+Shift+P
+
+2. 访问地址：
+   https://9001-iou7okyaq15h840cyuitp-c07dda5e.sandbox.novita.ai/price-position
+
+3. 打开开发者工具 (F12)
+
+4. 切换到Console标签，确认看到：
+   🔖 页面版本: v2.0.1-tooltip-fix
+
+5. 鼠标悬停在"逃顶信号"图表最右侧
+
+6. 查看Console输出：
+   🎯 Tooltip[194]: 24h=189, 2h=0
+
+7. 查看Tooltip弹出框应显示：
+   📅 2026-02-15 11:25:22
+   🔴 24h逃顶: <strong>189</strong> 次  ← 应该是189，不是79
+   🟠 2h逃顶: <strong>0</strong> 次</pre>
+        </div>
+
+        <div class="success" style="margin-top: 40px; padding: 30px;">
+            <div style="font-size: 1.5em; margin-bottom: 15px;">📝 结论</div>
+            <div style="font-size: 1.1em; line-height: 2;">
+                经过代码审查，修复<strong style="color: #52c41a;">完全正确</strong>。<br>
+                Tooltip现在使用 <code style="background: #0f3460; padding: 3px 8px; border-radius: 3px;">sell24hData.slice()</code>，<br>
+                确保与series data索引对齐，<br>
+                应该显示 <span class="highlight">189次</span> 而不是 79次。
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1小时爆仓金额月线图 - v2.0-多空标记</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+            background: #1e2139;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 0;
+        }
+        
+        .top-nav {
+            background: #2a2d47;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            justify-content: space-between;
+        }
+        
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .home-btn {
+            background: linear-gradient(135deg, #00d4ff 0%, #0099ff 100%);
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .home-btn:hover {
+            background: linear-gradient(135deg, #0099ff 0%, #00d4ff 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.4);
+        }
+        
+        .nav-title {
+            font-size: 18px;
+            font-weight: 500;
+            color: #fff;
+        }
+        
+        .info-bar {
+            background: #2a2d47;
+            padding: 15px 20px;
+            border-bottom: 1px solid #3a3d5c;
+        }
+        
+        .info-text {
+            color: #8b92b8;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+        
+        .info-highlight {
+            color: #00d4ff;
+            font-weight: 600;
+        }
+        
+        .legend-bar {
+            background: #2a2d47;
+            padding: 12px 20px;
+            border-bottom: 1px solid #3a3d5c;
+            display: flex;
+            gap: 30px;
+            align-items: center;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+        
+        .legend-box {
+            width: 30px;
+            height: 4px;
+            border-radius: 2px;
+        }
+        
+        .legend-long {
+            background: #22c55e;
+        }
+        
+        .legend-short {
+            background: #ef4444;
+        }
+        
+        .chart-section {
+            padding: 20px;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+        
+        .chart-subtitle {
+            font-size: 13px;
+            color: #8b92b8;
+            margin-top: 4px;
+        }
+        
+        .chart-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .stat-label {
+            color: #8b92b8;
+            font-size: 12px;
+        }
+        
+        .stat-value {
+            color: #fff;
+            font-weight: 600;
+        }
+        
+        .stat-value.red {
+            color: #ef4444;
+        }
+        
+        .stat-value.green {
+            color: #22c55e;
+        }
+        
+        .chart-container {
+            background: #2a2d47;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            position: relative;
+        }
+        
+        #monthlyChart {
+            width: 100%;
+            height: 600px;
+        }
+        
+        /* 标记点编辑弹窗 */
+        .mark-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #2a2d47;
+            border: 2px solid #3a3d5c;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            z-index: 10000;
+            min-width: 350px;
+        }
+        
+        .mark-modal.show {
+            display: block;
+        }
+        
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 9999;
+        }
+        
+        .modal-overlay.show {
+            display: block;
+        }
+        
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        
+        .modal-content {
+            margin-bottom: 20px;
+        }
+        
+        .modal-info {
+            background: #1e2139;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        .modal-label {
+            color: #8b92b8;
+            font-size: 13px;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-long {
+            background: #22c55e;
+            color: #fff;
+        }
+        
+        .btn-long:hover {
+            background: #16a34a;
+            transform: translateY(-1px);
+        }
+        
+        .btn-short {
+            background: #ef4444;
+            color: #fff;
+        }
+        
+        .btn-short:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+        }
+        
+        .btn-cancel {
+            background: #6b7280;
+            color: #fff;
+        }
+        
+        .btn-cancel:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部导航 -->
+        <div class="top-nav">
+            <div class="nav-left">
+                <a href="/" class="home-btn">← 返回首页</a>
+                <div class="nav-title">📊 1小时爆仓金额月线图 (多空标记版)</div>
+            </div>
+        </div>
+        
+        <!-- 信息栏 -->
+        <div class="info-bar">
+            <div class="info-text">
+                📈 数据说明：<span class="info-highlight">30分钟</span>为一个数据点，展示<span class="info-highlight">向前30天</span>的1小时爆仓金额趋势
+                <br>
+                🔴 标记规则：爆仓金额 ≥ <span class="info-highlight">1.5亿</span>时标记，标记点<span class="info-highlight">左右1小时内</span>只允许一个顶点
+                <br>
+                🎯 多空标记：点击标记点设置<span class="info-highlight" style="color: #22c55e;">多头爆仓(绿色主升)</span>或<span class="info-highlight" style="color: #ef4444;">空头爆仓(红色主跌)</span>
+            </div>
+        </div>
+        
+        <!-- 图例栏 -->
+        <div class="legend-bar">
+            <div class="legend-item">
+                <div class="legend-box legend-long"></div>
+                <span>多头爆仓后 → 主升行情（绿色）</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box legend-short"></div>
+                <span>空头爆仓后 → 主跌行情（红色）</span>
+            </div>
+        </div>
+        
+        <!-- 图表区域 -->
+        <div class="chart-section">
+            <div class="chart-header">
+                <div>
+                    <div class="chart-title">1小时爆仓金额月线图（多空趋势版）</div>
+                    <div class="chart-subtitle">30分钟K线，点击标记点设置多空标记</div>
+                </div>
+                <div class="chart-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">数据点数</span>
+                        <span class="stat-value" id="dataCount">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">标记点数</span>
+                        <span class="stat-value" id="markCount">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">多头爆仓</span>
+                        <span class="stat-value green" id="longCount">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">空头爆仓</span>
+                        <span class="stat-value red" id="shortCount">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">最大值</span>
+                        <span class="stat-value" id="maxValue">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <div id="monthlyChart"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 标记点编辑弹窗 -->
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="mark-modal" id="markModal">
+        <div class="modal-title">设置爆仓类型</div>
+        <div class="modal-content">
+            <div class="modal-info" id="modalInfo">
+                时间: --<br>
+                金额: --
+            </div>
+            <div class="modal-label">选择爆仓类型：</div>
+            <div class="modal-buttons">
+                <button class="modal-btn btn-long" onclick="setMarkType('long')">
+                    📈 多头爆仓<br><small>主升行情</small>
+                </button>
+                <button class="modal-btn btn-short" onclick="setMarkType('short')">
+                    📉 空头爆仓<br><small>主跌行情</small>
+                </button>
+                <button class="modal-btn btn-cancel" onclick="closeModal()">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chart = echarts.init(document.getElementById('monthlyChart'));
+        let chartData = [];  // 存储完整数据
+        let currentMarkIndex = -1;  // 当前编辑的标记点索引
+        
+        // 显示加载状态
+        chart.showLoading({
+            text: '加载中...',
+            color: '#00d4ff',
+            textColor: '#fff',
+            maskColor: 'rgba(26, 29, 49, 0.8)'
+        });
+        
+        // 加载数据并处理
+        async function loadAndProcessData() {
+            try {
+                console.log('📊 开始加载1小时爆仓数据...');
+                
+                // 加载最近30天的数据（30天 = 720小时）
+                const response = await fetch('/api/panic/hour1-curve?hours=720&_=' + Date.now());
+                const result = await response.json();
+                
+                console.log(`✅ 加载成功: ${result.count} 条原始数据`);
+                
+                if (!result.data || result.data.length === 0) {
+                    throw new Error('没有数据');
+                }
+                
+                // 只取最近30天的数据
+                const now = new Date();
+                const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                
+                const rawData = result.data
+                    .filter(item => new Date(item.datetime) >= thirtyDaysAgo)
+                    .map(item => ({
+                        time: item.datetime,
+                        amount: item.hour_1_amount
+                    }));
+                
+                console.log(`📊 过滤后数据: ${rawData.length} 条（最近30天）`);
+                
+                // 处理数据：30分钟聚合
+                const processedData = aggregateTo30Min(rawData);
+                console.log(`📊 30分钟聚合后: ${processedData.length} 个数据点`);
+                
+                // 标记大于1.5亿的点（左右1小时内只允许一个）
+                const markedData = markHighPointsWithInterval(processedData);
+                
+                // 渲染图表
+                renderChart(markedData);
+                
+            } catch (error) {
+                console.error('❌ 加载数据失败:', error);
+                chart.hideLoading();
+                chart.setOption({
+                    title: {
+                        text: '数据加载失败: ' + error.message,
+                        left: 'center',
+                        top: 'center',
+                        textStyle: { color: '#ff4444', fontSize: 16 }
+                    }
+                });
+            }
+        }
+        
+        // 30分钟聚合函数
+        function aggregateTo30Min(rawData) {
+            const result = [];
+            const map = new Map();
+            
+            rawData.forEach(item => {
+                const time = new Date(item.time);
+                // 将时间对齐到30分钟
+                const minutes = time.getMinutes();
+                const alignedMinutes = minutes < 30 ? 0 : 30;
+                time.setMinutes(alignedMinutes);
+                time.setSeconds(0);
+                time.setMilliseconds(0);
+                
+                const key = time.getTime();
+                
+                if (!map.has(key)) {
+                    map.set(key, {
+                        time: time.toISOString(),
+                        values: []
+                    });
+                }
+                
+                map.get(key).values.push(item.amount);
+            });
+            
+            // 计算每个30分钟区间的最大值
+            for (let [timestamp, data] of map.entries()) {
+                const maxAmount = Math.max(...data.values);
+                result.push({
+                    time: data.time,
+                    amount: maxAmount,
+                    timestamp: timestamp,
+                    markType: null  // null, 'long', 'short'
+                });
+            }
+            
+            // 按时间排序
+            result.sort((a, b) => a.timestamp - b.timestamp);
+            
+            return result;
+        }
+        
+        // 标记高点函数（左右1小时内只允许一个）
+        function markHighPointsWithInterval(data) {
+            const threshold = 15000; // 1.5亿 = 15000万
+            const oneHour = 60 * 60 * 1000; // 1小时的毫秒数
+            
+            const candidates = data
+                .map((item, index) => ({ ...item, index }))
+                .filter(item => item.amount >= threshold)
+                .sort((a, b) => b.amount - a.amount); // 按金额降序
+            
+            const marked = [];
+            const markedIndices = new Set();
+            
+            for (let candidate of candidates) {
+                // 检查左右1小时内是否已有标记
+                let hasNearbyMark = false;
+                
+                for (let markedIndex of markedIndices) {
+                    const timeDiff = Math.abs(candidate.timestamp - data[markedIndex].timestamp);
+                    if (timeDiff < oneHour) {
+                        hasNearbyMark = true;
+                        break;
+                    }
+                }
+                
+                if (!hasNearbyMark) {
+                    marked.push(candidate.index);
+                    markedIndices.add(candidate.index);
+                }
+            }
+            
+            // 标记数据
+            const result = data.map((item, index) => ({
+                ...item,
+                marked: marked.includes(index)
+            }));
+            
+            console.log(`🔴 标记了 ${marked.length} 个高点（1小时间隔规则）`);
+            
+            return result;
+        }
+        
+        // 渲染图表
+        function renderChart(data) {
+            chart.hideLoading();
+            chartData = data;
+            
+            updateChartDisplay();
+        }
+        
+        // 更新图表显示
+        function updateChartDisplay() {
+            const data = chartData;
+            
+            // 准备时间轴
+            const times = data.map(item => {
+                const date = new Date(item.time);
+                return `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+            });
+            
+            // 准备分段数据（根据多空标记着色）
+            const series = prepareColoredSeries(data);
+            
+            // 准备标记点
+            const markPointData = [];
+            data.forEach((item, index) => {
+                if (item.marked) {
+                    let color = '#fbbf24'; // 默认黄色（未设置）
+                    let label = (item.amount / 10000).toFixed(2) + '亿';
+                    
+                    if (item.markType === 'long') {
+                        color = '#22c55e';
+                        label = '📈 ' + label;
+                    } else if (item.markType === 'short') {
+                        color = '#ef4444';
+                        label = '📉 ' + label;
+                    }
+                    
+                    markPointData.push({
+                        coord: [index, item.amount],
+                        value: label,
+                        itemStyle: { color },
+                        dataIndex: index
+                    });
+                }
+            });
+            
+            // 统计信息
+            const markedCount = data.filter(d => d.marked).length;
+            const longCount = data.filter(d => d.marked && d.markType === 'long').length;
+            const shortCount = data.filter(d => d.marked && d.markType === 'short').length;
+            const maxAmount = Math.max(...data.map(d => d.amount));
+            
+            document.getElementById('dataCount').textContent = data.length;
+            document.getElementById('markCount').textContent = markedCount;
+            document.getElementById('longCount').textContent = longCount;
+            document.getElementById('shortCount').textContent = shortCount;
+            document.getElementById('maxValue').textContent = (maxAmount / 10000).toFixed(2) + '亿';
+            
+            // 配置图表
+            const option = {
+                backgroundColor: 'transparent',
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    top: '10%',
+                    containLabel: true
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(26, 29, 49, 0.95)',
+                    borderColor: '#3a3d5c',
+                    borderWidth: 1,
+                    textStyle: { color: '#fff' },
+                    formatter: function(params) {
+                        const p = params[0];
+                        const item = data[p.dataIndex];
+                        const amountYi = (item.amount / 10000).toFixed(2);
+                        
+                        let html = `
+                            <div style="padding: 8px; min-width: 220px;">
+                                <div style="font-weight: bold; margin-bottom: 8px;">
+                                    ⏰ ${p.axisValue}
+                                </div>
+                                <div style="margin-bottom: 4px;">
+                                    💰 爆仓金额: <span style="color: #00d4ff; font-weight: bold;">${amountYi}亿</span>
+                                </div>
+                        `;
+                        
+                        if (item.marked) {
+                            let markText = '⚠️ 未设置类型';
+                            let markColor = '#fbbf24';
+                            
+                            if (item.markType === 'long') {
+                                markText = '📈 多头爆仓 → 主升';
+                                markColor = '#22c55e';
+                            } else if (item.markType === 'short') {
+                                markText = '📉 空头爆仓 → 主跌';
+                                markColor = '#ef4444';
+                            }
+                            
+                            html += `
+                                <div style="margin-top: 8px; padding: 4px 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; font-size: 12px; color: ${markColor};">
+                                    ${markText}
+                                </div>
+                                <div style="margin-top: 4px; font-size: 11px; color: #8b92b8;">
+                                    点击标记点可修改类型
+                                </div>
+                            `;
+                        }
+                        
+                        html += '</div>';
+                        return html;
+                    }
+                },
+                xAxis: {
+                    type: 'category',
+                    data: times,
+                    axisLine: { lineStyle: { color: '#3a3d5c' } },
+                    axisLabel: {
+                        color: '#8b92b8',
+                        fontSize: 11,
+                        interval: Math.floor(data.length / 20)
+                    },
+                    axisTick: { show: false }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '爆仓金额（万）',
+                    nameTextStyle: { color: '#8b92b8', fontSize: 12 },
+                    axisLine: { show: false },
+                    axisTick: { show: false },
+                    axisLabel: {
+                        color: '#8b92b8',
+                        fontSize: 11,
+                        formatter: function(value) {
+                            if (value >= 10000) {
+                                return (value / 10000).toFixed(1) + '亿';
+                            }
+                            return value;
+                        }
+                    },
+                    splitLine: {
+                        lineStyle: { color: '#3a3d5c', type: 'dashed' }
+                    }
+                },
+                series: [
+                    ...series,  // 多条分段系列
+                    {
+                        name: '标记点',
+                        type: 'scatter',
+                        data: [],
+                        symbolSize: 0,
+                        markPoint: {
+                            silent: false,
+                            data: markPointData,
+                            symbol: 'pin',
+                            symbolSize: 50,
+                            label: {
+                                show: true,
+                                position: 'top',
+                                distance: 10,
+                                formatter: '{c}',
+                                fontSize: 12,
+                                fontWeight: 'bold',
+                                color: '#fff',
+                                padding: [6, 10],
+                                borderRadius: 4,
+                                borderWidth: 2,
+                                borderColor: '#fff'
+                            }
+                        },
+                        markLine: {
+                            silent: true,
+                            symbol: 'none',
+                            label: {
+                                position: 'end',
+                                formatter: '1.5亿警戒线',
+                                fontSize: 12,
+                                color: '#ff4444'
+                            },
+                            lineStyle: {
+                                color: '#ff4444',
+                                type: 'dashed',
+                                width: 2
+                            },
+                            data: [{ yAxis: 15000 }]
+                        }
+                    }
+                ]
+            };
+            
+            chart.setOption(option, true);
+            
+            // 监听标记点点击事件
+            chart.off('click');
+            chart.on('click', function(params) {
+                if (params.componentType === 'markPoint') {
+                    const dataIndex = params.data.dataIndex;
+                    openModal(dataIndex);
+                }
+            });
+            
+            console.log('✅ 图表更新完成');
+        }
+        
+        // 准备分段着色的系列数据
+        function prepareColoredSeries(data) {
+            const series = [];
+            let currentSegment = [];
+            let currentColor = '#00d4ff';  // 默认蓝色
+            
+            data.forEach((item, index) => {
+                currentSegment.push(item.amount);
+                
+                // 如果遇到标记点，结束当前段，开始新段
+                if (item.marked && index < data.length - 1) {
+                    // 添加当前段
+                    series.push(createSeriesSegment(currentSegment, index - currentSegment.length + 1, currentColor));
+                    
+                    // 确定新段的颜色
+                    if (item.markType === 'long') {
+                        currentColor = '#22c55e';  // 绿色（主升）
+                    } else if (item.markType === 'short') {
+                        currentColor = '#ef4444';  // 红色（主跌）
+                    } else {
+                        currentColor = '#00d4ff';  // 蓝色（未设置）
+                    }
+                    
+                    // 开始新段（包含标记点）
+                    currentSegment = [item.amount];
+                }
+            });
+            
+            // 添加最后一段
+            if (currentSegment.length > 0) {
+                series.push(createSeriesSegment(currentSegment, data.length - currentSegment.length, currentColor));
+            }
+            
+            return series;
+        }
+        
+        // 将16进制或rgb颜色转换为rgba
+        function convertToRgba(color, alpha) {
+            // 如果是16进制颜色
+            if (color.startsWith('#')) {
+                const hex = color.slice(1);
+                const r = parseInt(hex.slice(0, 2), 16);
+                const g = parseInt(hex.slice(2, 4), 16);
+                const b = parseInt(hex.slice(4, 6), 16);
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+            // 如果是rgb颜色
+            if (color.startsWith('rgb')) {
+                return color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+            }
+            // 如果已经是rgba
+            if (color.startsWith('rgba')) {
+                // 替换最后的透明度
+                return color.replace(/[\d.]+\)$/, `${alpha})`);
+            }
+            return color;
+        }
+        
+        // 创建系列段
+        function createSeriesSegment(values, startIndex, color) {
+            // 创建数据数组，前面补null
+            const data = new Array(startIndex).fill(null).concat(values);
+            
+            return {
+                type: 'line',
+                data: data,
+                smooth: true,
+                symbol: 'none',
+                lineStyle: {
+                    color: color,
+                    width: 3
+                },
+                areaStyle: {
+                    color: {
+                        type: 'linear',
+                        x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: convertToRgba(color, 0.3) },
+                            { offset: 1, color: convertToRgba(color, 0.05) }
+                        ]
+                    }
+                }
+            };
+        }
+        
+        // 打开标记点编辑弹窗
+        function openModal(dataIndex) {
+            const item = chartData[dataIndex];
+            currentMarkIndex = dataIndex;
+            
+            const date = new Date(item.time);
+            const timeStr = `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+            const amountStr = (item.amount / 10000).toFixed(2) + '亿';
+            
+            document.getElementById('modalInfo').innerHTML = `
+                ⏰ 时间: ${timeStr}<br>
+                💰 金额: ${amountStr}
+            `;
+            
+            document.getElementById('modalOverlay').classList.add('show');
+            document.getElementById('markModal').classList.add('show');
+        }
+        
+        // 关闭弹窗
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('show');
+            document.getElementById('markModal').classList.remove('show');
+            currentMarkIndex = -1;
+        }
+        
+        // 设置标记类型
+        function setMarkType(type) {
+            if (currentMarkIndex >= 0) {
+                chartData[currentMarkIndex].markType = type;
+                console.log(`✅ 设置标记点 ${currentMarkIndex} 为: ${type === 'long' ? '多头爆仓' : '空头爆仓'}`);
+                
+                // 保存到localStorage
+                saveMarksToStorage();
+                
+                // 重新渲染图表
+                updateChartDisplay();
+            }
+            closeModal();
+        }
+        
+        // 保存标记到localStorage
+        function saveMarksToStorage() {
+            const marks = chartData
+                .map((item, index) => ({
+                    time: item.time,
+                    markType: item.markType
+                }))
+                .filter(m => m.markType);
+            
+            localStorage.setItem('liquidation_marks', JSON.stringify(marks));
+        }
+        
+        // 从localStorage加载标记
+        function loadMarksFromStorage() {
+            try {
+                const saved = localStorage.getItem('liquidation_marks');
+                if (saved) {
+                    const marks = JSON.parse(saved);
+                    marks.forEach(mark => {
+                        const item = chartData.find(d => d.time === mark.time);
+                        if (item) {
+                            item.markType = mark.markType;
+                        }
+                    });
+                    console.log(`✅ 从缓存加载了 ${marks.length} 个标记`);
+                }
+            } catch (e) {
+                console.error('加载标记失败:', e);
+            }
+        }
+        
+        // 点击遮罩层关闭弹窗
+        document.getElementById('modalOverlay').addEventListener('click', closeModal);
+        
+        // 窗口大小改变时重新渲染
+        window.addEventListener('resize', () => {
+            chart.resize();
+        });
+        
+        // 页面加载完成后开始加载数据
+        window.addEventListener('load', () => {
+            loadAndProcessData().then(() => {
+                loadMarksFromStorage();
+                updateChartDisplay();
+            });
+        });
+    </script>
+</body>
+</html>

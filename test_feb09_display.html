@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>测试2月9日波峰显示</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <h2>测试2月9日波峰标记点显示</h2>
+    <div id="chart" style="width: 800px; height: 400px;"></div>
+    
+    <h3>调试信息：</h3>
+    <pre id="debug"></pre>
+    
+    <script>
+        async function test() {
+            const debug = document.getElementById('debug');
+            
+            // 1. 获取历史数据
+            const historyResponse = await fetch('/api/coin-change-tracker/history?date=2026-02-09&limit=100');
+            const historyData = await historyResponse.json();
+            
+            debug.textContent += '历史数据样本：\n';
+            debug.textContent += JSON.stringify(historyData.data.slice(0, 3), null, 2) + '\n\n';
+            
+            // 2. 获取波峰数据
+            const peaksResponse = await fetch('/api/coin-change-tracker/wave-peaks?date=2026-02-09');
+            const peaksData = await peaksResponse.json();
+            
+            debug.textContent += '波峰数据：\n';
+            debug.textContent += `波峰数量: ${peaksData.peaks_count}\n`;
+            if (peaksData.peaks && peaksData.peaks.length > 0) {
+                debug.textContent += `第一个波峰B点: ${peaksData.peaks[0].b_point.beijing_time}\n`;
+                debug.textContent += JSON.stringify(peaksData.peaks[0].b_point, null, 2) + '\n\n';
+            }
+            
+            // 3. 构建times数组（模拟前端逻辑）
+            const times = historyData.data.map(d => {
+                if (d.beijing_time) {
+                    return d.beijing_time.split(' ')[1] || 'undefined';
+                } else if (d.time) {
+                    return d.time;
+                } else {
+                    return 'undefined';
+                }
+            });
+            
+            debug.textContent += 'Times数组示例（前10个）：\n';
+            debug.textContent += JSON.stringify(times.slice(0, 10), null, 2) + '\n\n';
+            
+            // 4. 测试匹配
+            if (peaksData.peaks && peaksData.peaks.length > 0) {
+                const bTime = peaksData.peaks[0].b_point.beijing_time.split(' ')[1];
+                const bIndex = times.indexOf(bTime);
+                
+                debug.textContent += `匹配测试：\n`;
+                debug.textContent += `  B点时间: ${peaksData.peaks[0].b_point.beijing_time}\n`;
+                debug.textContent += `  提取时间: ${bTime}\n`;
+                debug.textContent += `  在times数组中的索引: ${bIndex}\n`;
+                
+                if (bIndex < 0) {
+                    debug.textContent += `  ❌ 未找到匹配！\n`;
+                    // 查找相似的
+                    const similar = times.filter(t => t && t.startsWith(bTime.substring(0, 5)));
+                    debug.textContent += `  相似时间: ${JSON.stringify(similar.slice(0, 5))}\n`;
+                } else {
+                    debug.textContent += `  ✅ 找到匹配！\n`;
+                }
+            }
+        }
+        
+        test();
+    </script>
+</body>
+</html>

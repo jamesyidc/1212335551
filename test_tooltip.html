@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Tooltip Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div id="chart" style="width: 800px; height: 400px;"></div>
+    <script>
+        const chart = echarts.init(document.getElementById('chart'));
+        
+        // 模拟数据
+        const times = ['00:00', '01:00', '02:00'];
+        const data24h = [190, 200, 207];
+        const data2h = [10, 20, 24];
+        
+        // 复制数据到闭包外
+        const chartData24h = data24h.slice();
+        const chartData2h = data2h.slice();
+        
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                formatter: function(params) {
+                    const idx = params[0].dataIndex;
+                    console.log('Tooltip triggered, index:', idx);
+                    console.log('chartData24h[' + idx + ']:', chartData24h[idx]);
+                    console.log('chartData2h[' + idx + ']:', chartData2h[idx]);
+                    
+                    return `Index: ${idx}<br/>24h: ${chartData24h[idx]}<br/>2h: ${chartData2h[idx]}`;
+                }
+            },
+            xAxis: { type: 'category', data: times },
+            yAxis: { type: 'value' },
+            series: [
+                { name: '24h', type: 'line', data: data24h },
+                { name: '2h', type: 'line', data: data2h }
+            ]
+        };
+        
+        chart.setOption(option);
+    </script>
+</body>
+</html>

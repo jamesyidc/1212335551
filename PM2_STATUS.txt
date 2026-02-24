@@ -1,0 +1,28 @@
+┌────┬───────────────────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                              │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 13 │ coin-change-tracker               │ default     │ N/A     │ fork    │ 940      │ 84s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 3  │ crypto-index-collector            │ default     │ N/A     │ fork    │ 930      │ 85s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 17 │ dashboard-jsonl-manager           │ default     │ N/A     │ fork    │ 944      │ 84s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 14 │ data-health-monitor               │ default     │ N/A     │ fork    │ 941      │ 84s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 8  │ financial-indicators-collector    │ default     │ N/A     │ fork    │ 935      │ 84s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 0  │ flask-app                         │ default     │ N/A     │ fork    │ 927      │ 85s    │ 0    │ online    │ 0%       │ 75.2mb   │ user     │ disabled │
+│ 18 │ gdrive-jsonl-manager              │ default     │ N/A     │ fork    │ 945      │ 84s    │ 0    │ online    │ 0%       │ 11.1mb   │ user     │ disabled │
+│ 2  │ liquidation-1h-collector          │ default     │ N/A     │ fork    │ 929      │ 85s    │ 0    │ online    │ 0%       │ 10.9mb   │ user     │ disabled │
+│ 16 │ liquidation-alert-monitor         │ default     │ N/A     │ fork    │ 943      │ 84s    │ 0    │ online    │ 0%       │ 27.7mb   │ user     │ disabled │
+│ 21 │ market-sentiment-collector        │ default     │ N/A     │ fork    │ 948      │ 84s    │ 0    │ online    │ 0%       │ 28.9mb   │ user     │ disabled │
+│ 9  │ okx-day-change-collector          │ default     │ N/A     │ fork    │ 936      │ 84s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 19 │ okx-tpsl-monitor                  │ default     │ N/A     │ fork    │ 946      │ 84s    │ 0    │ online    │ 0%       │ 30.7mb   │ user     │ disabled │
+│ 20 │ okx-trade-history                 │ default     │ N/A     │ fork    │ 947      │ 84s    │ 0    │ online    │ 0%       │ 30.3mb   │ user     │ disabled │
+│ 12 │ panic-wash-collector              │ default     │ N/A     │ fork    │ 939      │ 84s    │ 0    │ online    │ 0%       │ 31.3mb   │ user     │ disabled │
+│ 10 │ price-baseline-collector          │ default     │ N/A     │ fork    │ 937      │ 84s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 7  │ price-comparison-collector        │ default     │ N/A     │ fork    │ 934      │ 85s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 22 │ price-position-collector          │ default     │ N/A     │ fork    │ 949      │ 84s    │ 0    │ online    │ 0%       │ 101.2mb  │ user     │ disabled │
+│ 5  │ price-speed-collector             │ default     │ N/A     │ fork    │ 932      │ 85s    │ 0    │ online    │ 0%       │ 10.9mb   │ user     │ disabled │
+│ 23 │ rsi-takeprofit-monitor            │ default     │ N/A     │ fork    │ 950      │ 84s    │ 0    │ online    │ 0%       │ 28.0mb   │ user     │ disabled │
+│ 11 │ sar-bias-stats-collector          │ default     │ N/A     │ fork    │ 938      │ 84s    │ 0    │ online    │ 0%       │ 28.3mb   │ user     │ disabled │
+│ 6  │ sar-slope-collector               │ default     │ N/A     │ fork    │ 933      │ 85s    │ 0    │ online    │ 0%       │ 46.8mb   │ user     │ disabled │
+│ 1  │ signal-collector                  │ default     │ N/A     │ fork    │ 928      │ 85s    │ 0    │ online    │ 0%       │ 10.9mb   │ user     │ disabled │
+│ 15 │ system-health-monitor             │ default     │ N/A     │ fork    │ 942      │ 84s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+│ 4  │ v1v2-collector                    │ default     │ N/A     │ fork    │ 931      │ 85s    │ 0    │ online    │ 0%       │ 10.8mb   │ user     │ disabled │
+└────┴───────────────────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘

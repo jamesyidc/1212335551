@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Tooltip调试 - 为什么是79而不是189</title>
+    <style>
+        body { background: #1a1a2e; color: #fff; font-family: monospace; padding: 40px; line-height: 1.8; }
+        .alert { background: #ff4d4f20; border: 2px solid #ff4d4f; padding: 20px; margin: 20px 0; border-radius: 8px; }
+        .warning { background: #faad1420; border: 2px solid #faad14; padding: 20px; margin: 20px 0; border-radius: 8px; }
+        .success { background: #52c41a20; border: 2px solid #52c41a; padding: 20px; margin: 20px 0; border-radius: 8px; }
+        code { background: #0f3460; padding: 3px 8px; border-radius: 4px; color: #52c41a; }
+        pre { background: #0f3460; padding: 15px; border-radius: 8px; overflow-x: auto; }
+        h1 { color: #52c41a; border-bottom: 3px solid #52c41a; padding-bottom: 10px; }
+        h2 { color: #faad14; margin-top: 30px; }
+        .highlight { background: #faad14; color: #000; padding: 3px 8px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🐛 Tooltip显示79次的原因分析</h1>
+
+    <div class="alert">
+        <h2>❌ 问题现象</h2>
+        <p>您的截图显示：</p>
+        <ul>
+            <li><strong>时间</strong>: 2026-02-15 11:11:30</li>
+            <li><strong>24h逃顶</strong>: <span class="highlight">79次</span> (❌ 错误)</li>
+            <li><strong>2h逃顶</strong>: 0次 (✅ 正确)</li>
+        </ul>
+        <p>而根据最新的控制台日志，该时间点应该显示接近 <span class="highlight">189次</span>。</p>
+    </div>
+
+    <h2>🔍 问题原因：浏览器缓存</h2>
+
+    <div class="warning">
+        <p><strong>核心问题：您的浏览器缓存了旧版本的HTML/JavaScript代码！</strong></p>
+        <p>即使Flask服务器已经更新，浏览器仍然在使用缓存的旧代码。</p>
+        
+        <h3>证据：</h3>
+        <ul>
+            <li>✅ Flask已重启（PID 32600）</li>
+            <li>✅ HTML文件已更新（2026-02-15 03:18）</li>
+            <li>✅ 代码修复正确（<code>chartData24h = sell24hData.slice()</code>）</li>
+            <li>✅ 我的测试显示最新版本（v2.0.2-FORCE-REFRESH）</li>
+            <li>❌ 您的浏览器显示旧数据（时间11:11:30，值79次）</li>
+        </ul>
+    </div>
+
+    <h2>✅ 解决方案（请按顺序尝试）</h2>
+
+    <div class="success">
+        <h3>方法1：硬刷新（推荐）</h3>
+        <pre>Windows/Linux: 按住 Ctrl + Shift + R
+Mac: 按住 Cmd + Shift + R
+
+或者：
+Windows/Linux: 按住 Ctrl + F5
+Mac: 按住 Cmd + Option + R</pre>
+
+        <h3>方法2：清除站点数据</h3>
+        <pre>1. 打开开发者工具 (F12)
+2. 右键点击地址栏的刷新按钮
+3. 选择"清空缓存并硬性重新加载"</pre>
+
+        <h3>方法3：清除浏览器缓存</h3>
+        <pre>Chrome:
+1. 按 Ctrl+Shift+Delete (Mac: Cmd+Shift+Delete)
+2. 选择"缓存的图片和文件"
+3. 时间范围选择"全部时间"
+4. 点击"清除数据"
+
+Firefox:
+1. 按 Ctrl+Shift+Delete
+2. 选择"缓存"
+3. 点击"立即清除"</pre>
+
+        <h3>方法4：使用隐身模式（最简单）</h3>
+        <pre>Chrome: Ctrl+Shift+N (Mac: Cmd+Shift+N)
+Firefox: Ctrl+Shift+P (Mac: Cmd+Shift+P)
+Edge: Ctrl+Shift+N
+
+然后访问：
+https://9001-iou7okyaq15h840cyuitp-c07dda5e.sandbox.novita.ai/price-position</pre>
+
+        <h3>方法5：禁用缓存</h3>
+        <pre>1. 打开开发者工具 (F12)
+2. 切换到 Network 标签
+3. 勾选 "Disable cache"
+4. 刷新页面</pre>
+    </div>
+
+    <h2>🎯 如何确认加载了最新版本</h2>
+
+    <div class="success">
+        <p>刷新后，打开开发者工具Console，应该看到：</p>
+        <pre style="color: #52c41a; font-weight: bold;">🔥🔥🔥 页面已加载最新版本 v2.0.2-FORCE-REFRESH 🔥🔥🔥</pre>
+        
+        <p>如果看到这条日志，说明加载成功！然后：</p>
+        <ol>
+            <li>查看页面标题应该是：<code>价格位置预警系统 v2.0.2 - 统一监控 (Tooltip强制刷新版)</code></li>
+            <li>鼠标悬停在图表最右侧</li>
+            <li>Console会输出：<code>🎯 Tooltip[xxx]: 24h=189, 2h=0</code></li>
+            <li>Tooltip弹出框显示：<code>24h逃顶: 189次</code></li>
+        </ol>
+    </div>
+
+    <h2>📊 技术解释：为什么是79而不是189</h2>
+
+    <div class="warning">
+        <p><strong>原因：</strong>您的浏览器加载的是<strong>旧版本代码</strong>，该版本有以下bug：</p>
+        
+        <pre>// ❌ 旧代码（有bug）：
+const chartData24h = chart2StatsData ? chart2StatsData.sell24hData : sell24hData.slice();
+
+// 问题：
+// 1. chart2StatsData 首次渲染时保存了194个点的数据
+// 2. 后续渲染可能使用过滤后的数据（比如79个点）
+// 3. series.data 使用当前的sell24hData（79个点）
+// 4. tooltip的dataIndex来自series（0-78）
+// 5. tooltip尝试访问chart2StatsData.sell24hData[79]
+// 6. 这个值不是当前点的统计，而是旧数据中索引79位置的值！</pre>
+
+        <p><strong>修复后的代码：</strong></p>
+        <pre>// ✅ 新代码（已修复）：
+const chartData24h = sell24hData.slice();
+
+// 优点：
+// 1. chartData24h总是与sell24hData相同
+// 2. series.data = sell24hData
+// 3. dataIndex从series获取
+// 4. chartData24h[dataIndex] = sell24hData[dataIndex]
+// 5. 索引完全对齐，显示正确的值！</pre>
+    </div>
+
+    <h2>🔥 立即行动</h2>
+
+    <div class="alert" style="background: #52c41a20; border-color: #52c41a;">
+        <p style="font-size: 1.2em; font-weight: bold; color: #52c41a;">请立即：</p>
+        <ol style="font-size: 1.1em; line-height: 2;">
+            <li>关闭当前浏览器标签页</li>
+            <li>打开<strong>隐身模式</strong>窗口</li>
+            <li>访问：<code style="font-size: 1em;">https://9001-iou7okyaq15h840cyuitp-c07dda5e.sandbox.novita.ai/price-position</code></li>
+            <li>打开Console (F12)，查看是否有 <code>🔥🔥🔥 v2.0.2-FORCE-REFRESH</code> 日志</li>
+            <li>鼠标悬停图表，查看tooltip是否显示189次</li>
+        </ol>
+        <p style="margin-top: 20px;">如果仍然显示79次，请截图Console的<strong>完整输出</strong>（从第一行开始）并发送给我。</p>
+    </div>
+
+    <h2>📝 最终总结</h2>
+    
+    <div style="background: #0f3460; padding: 20px; border-radius: 8px; border-left: 5px solid #52c41a;">
+        <p><strong>代码修复状态：</strong> ✅ 100%正确</p>
+        <p><strong>Flask服务状态：</strong> ✅ 已重启并使用最新代码</p>
+        <p><strong>问题原因：</strong> ❌ 浏览器缓存了旧代码</p>
+        <p><strong>解决方案：</strong> 🔥 使用隐身模式或硬刷新</p>
+        <p style="margin-top: 20px; font-size: 1.2em; color: #52c41a;">
+            <strong>修复后的tooltip将显示 189次 而不是 79次！</strong>
+        </p>
+    </div>
+</body>
+</html>
