@@ -4,11 +4,13 @@
 日线级别暴跌预警监控
 全天候监控，独立于0-2点预判
 检测A点RSI总和连续递减模式：A1 > A2 > A3 或 A2 > A3 > A4
+检测到暴跌预警时，自动发送Telegram消息提醒平掉所有多头持仓
 """
 
 import json
 import os
 import sys
+import requests
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,6 +22,42 @@ sys.path.insert(0, str(BASE_DIR))
 WAVE_PEAKS_DIR = BASE_DIR / 'data' / 'coin_change_tracker' / 'wave_peaks'
 WARNING_DIR = BASE_DIR / 'data' / 'daily_crash_warnings'
 WARNING_DIR.mkdir(parents=True, exist_ok=True)
+
+# Telegram配置
+TELEGRAM_BOT_TOKEN = "8437045462:AAFePnwdC21cqeWhZISMQHGGgjmroVqE2H0"
+TELEGRAM_CHAT_ID = "-1003227444260"
+
+def send_telegram_message(message, repeat_count=3):
+    """发送Telegram消息（重复指定次数）
+    
+    Args:
+        message: 消息内容
+        repeat_count: 重复发送次数（默认3次）
+    
+    Returns:
+        成功发送的次数
+    """
+    success_count = 0
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    
+    for i in range(repeat_count):
+        try:
+            response = requests.post(url, json=data, timeout=10)
+            
+            if response.status_code == 200:
+                success_count += 1
+                print(f"✅ Telegram消息第 {i+1}/{repeat_count} 次发送成功")
+            else:
+                print(f"❌ Telegram消息第 {i+1}/{repeat_count} 次发送失败: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"❌ Telegram消息第 {i+1}/{repeat_count} 次发送异常: {e}")
+    
+    return success_count
 
 def get_beijing_time():
     """获取北京时间"""
@@ -213,8 +251,14 @@ def check_crash_warning_pattern(peaks):
     
     return warnings if warnings else None
 
-def save_warning(date_str, warnings):
-    """保存预警信息到文件"""
+def save_warning(date_str, warnings, notification_sent=False):
+    """保存预警信息到文件
+    
+    Args:
+        date_str: 日期字符串 (YYYYMMDD)
+        warnings: 预警列表
+        notification_sent: 是否已发送通知
+    """
     output_file = WARNING_DIR / f'crash_warning_{date_str}.json'
     
     data = {
@@ -222,6 +266,7 @@ def save_warning(date_str, warnings):
         'check_time': get_beijing_time().strftime('%Y-%m-%d %H:%M:%S'),
         'has_warning': bool(warnings),
         'warning_count': len(warnings) if warnings else 0,
+        'notification_sent': notification_sent,  # 记录是否已发送通知
         'warnings': warnings or []
     }
     
@@ -229,6 +274,29 @@ def save_warning(date_str, warnings):
         json.dump(data, f, ensure_ascii=False, indent=2)
     
     return output_file
+
+def check_if_already_notified(date_str):
+    """检查今天是否已经发送过通知
+    
+    Args:
+        date_str: 日期字符串 (YYYYMMDD)
+    
+    Returns:
+        如果已发送过通知返回True，否则返回False
+    """
+    warning_file = WARNING_DIR / f'crash_warning_{date_str}.json'
+    
+    if not warning_file.exists():
+        return False
+    
+    try:
+        with open(warning_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            # 检查是否有预警且已发送通知
+            return data.get('has_warning', False) and data.get('notification_sent', False)
+    except Exception as e:
+        print(f"⚠️ 读取预警记录失败: {e}")
+        return False
 
 def monitor_today():
     """监控今天的暴跌预警"""
@@ -323,11 +391,37 @@ def monitor_date(date_str):
         save_warning(date_str, None)
         return None
     
+    # 检测今天是否已经发送过通知
+    already_notified = check_if_already_notified(date_str)
+    
+    if already_notified:
+        print(f"ℹ️ 今天已经发送过暴跌预警通知，跳过重复发送")
+        # 仍然返回预警信息，但不发送通知
+        try:
+            warning_file = WARNING_DIR / f'crash_warning_{date_str}.json'
+            with open(warning_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('warnings', [])
+        except:
+            return None
+    
     # 检测暴跌预警模式
     warnings = check_crash_warning_pattern(peaks)
     
     if warnings:
         print(f"\n🚨 检测到 {len(warnings)} 个暴跌预警！\n")
+        
+        # 准备Telegram消息
+        tg_message_lines = [
+            "🚨🚨🚨 <b>【紧急】暴跌风险预警</b> 🚨🚨🚨",
+            "",
+            f"⏰ 检测时间: {get_beijing_time().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"📅 监控日期: {date_str[:4]}-{date_str[4:6]}-{date_str[6:]}",
+            f"🔔 预警数量: {len(warnings)} 个",
+            "",
+            "=" * 40,
+            ""
+        ]
         
         for i, warning in enumerate(warnings, 1):
             print(f"预警 {i}:")
@@ -347,9 +441,66 @@ def monitor_date(date_str):
                 status = "✅" if comp['is_declining'] else "❌"
                 print(f"    {status} {key}: {comp['values']} (降幅: {comp['decline_rate']})")
             print()
+            
+            # 添加到Telegram消息
+            tg_message_lines.extend([
+                f"<b>预警 {i}: {warning['pattern_type']}</b>",
+                f"📍 波峰: {warning['peak_indices']}",
+                f"⚠️ 信号: {warning['signal']}",
+                f"💡 操作: {warning['operation_tip']}",
+                "",
+                "📊 A点数据:",
+            ])
+            
+            for peak in warning['peaks']:
+                tg_message_lines.append(
+                    f"  • {peak['label']}: {peak['a_point_value']:.2f} @ {peak['a_point_time']}"
+                )
+            
+            tg_message_lines.extend([
+                "",
+                "📉 递减对比:",
+            ])
+            
+            for key, comp in warning['comparisons'].items():
+                status = "✅" if comp['is_declining'] else "❌"
+                tg_message_lines.append(
+                    f"  {status} {key}: {comp['values']} (降幅: {comp['decline_rate']})"
+                )
+            
+            tg_message_lines.extend(["", "=" * 40, ""])
         
-        # 保存预警
-        output_file = save_warning(date_str, warnings)
+        # 添加紧急提示
+        tg_message_lines.extend([
+            "",
+            "🔴🔴🔴 <b>【紧急操作建议】</b> 🔴🔴🔴",
+            "",
+            "⚠️ <b>立即平掉所有多头持仓！</b>",
+            "⚠️ <b>市场即将暴跌，风险极高！</b>",
+            "⚠️ <b>建议逢高做空或观望！</b>",
+            "",
+            "📌 操作提示：",
+            "  1. 检查所有多头仓位",
+            "  2. 立即平仓止损",
+            "  3. 等待市场稳定后再入场",
+            "  4. 可考虑逢高做空",
+            "",
+            f"🕐 发送时间: {get_beijing_time().strftime('%Y-%m-%d %H:%M:%S')}",
+        ])
+        
+        # 发送Telegram消息（重复3次）
+        tg_message = "\n".join(tg_message_lines)
+        success_count = send_telegram_message(tg_message, repeat_count=3)
+        
+        # 标记为已发送（至少成功1次）
+        notification_sent = success_count > 0
+        if notification_sent:
+            print(f"✅ Telegram通知已发送 ({success_count}/3 次成功)")
+        else:
+            print(f"❌ Telegram通知发送全部失败")
+        
+        # 保存预警（记录通知状态）
+        output_file = save_warning(date_str, warnings, notification_sent=notification_sent)
         print(f"💾 预警信息已保存到: {output_file.name}")
         
         return warnings

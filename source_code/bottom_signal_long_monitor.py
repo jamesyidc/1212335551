@@ -100,28 +100,41 @@ def load_strategy_config(account_id, strategy_type):
 
 
 def check_last_execution(account_id, strategy_type):
-    """检查上次执行时间，判断是否在冷却期内"""
+    """检查上次执行时间，判断是否在冷却期内（支持按日期分文件）"""
     EXECUTION_DIR.mkdir(parents=True, exist_ok=True)
-    execution_file = EXECUTION_DIR / f"{account_id}_bottom_signal_{strategy_type}_execution.jsonl"
+    now = datetime.now()
     
+    # 优先检查今天的文件
+    date_str = now.strftime('%Y%m%d')  # 20260226
+    execution_file = EXECUTION_DIR / f"{account_id}_bottom_signal_{strategy_type}_execution_{date_str}.jsonl"
+    
+    # 如果今天的文件不存在，检查旧格式文件（兼容性）
     if not execution_file.exists():
-        return True  # 文件不存在，可以执行
+        old_execution_file = EXECUTION_DIR / f"{account_id}_bottom_signal_{strategy_type}_execution.jsonl"
+        if old_execution_file.exists():
+            execution_file = old_execution_file
+        else:
+            return True  # 两个文件都不存在，可以执行
     
     try:
         with open(execution_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
             if lines:
-                last_record = json.loads(lines[-1].strip())
-                last_time_str = last_record.get('timestamp')
-                if last_time_str:
-                    last_time = datetime.fromisoformat(last_time_str)
-                    now = datetime.now()
-                    time_diff = (now - last_time).total_seconds()
-                    
-                    if time_diff < COOLDOWN_TIME:
-                        remaining = int(COOLDOWN_TIME - time_diff)
-                        log(f"⏳ [{account_id}/{strategy_type}] 冷却期内，还需等待 {remaining}秒")
-                        return False
+                # 从后往前查找最近的执行记录
+                for line in reversed(lines):
+                    line = line.strip()
+                    if line:
+                        last_record = json.loads(line)
+                        last_time_str = last_record.get('timestamp')
+                        if last_time_str:
+                            last_time = datetime.fromisoformat(last_time_str)
+                            time_diff = (now - last_time).total_seconds()
+                            
+                            if time_diff < COOLDOWN_TIME:
+                                remaining = int(COOLDOWN_TIME - time_diff)
+                                log(f"⏳ [{account_id}/{strategy_type}] 冷却期内，还需等待 {remaining}秒")
+                                return False
+                            break  # 找到最近的记录就退出
     except Exception as e:
         log(f"❌ [{account_id}/{strategy_type}] 检查执行记录失败: {e}")
     
@@ -129,14 +142,19 @@ def check_last_execution(account_id, strategy_type):
 
 
 def record_execution(account_id, strategy_type, coins, rsi_value, result):
-    """记录执行信息"""
+    """记录执行信息（按日期分文件保存）"""
     EXECUTION_DIR.mkdir(parents=True, exist_ok=True)
-    execution_file = EXECUTION_DIR / f"{account_id}_bottom_signal_{strategy_type}_execution.jsonl"
+    
+    # 按日期分文件：account_main_bottom_signal_top8_long_execution_20260226.jsonl
+    now = datetime.now()
+    date_str = now.strftime('%Y%m%d')  # 20260226
+    execution_file = EXECUTION_DIR / f"{account_id}_bottom_signal_{strategy_type}_execution_{date_str}.jsonl"
     
     try:
         record = {
-            'timestamp': datetime.now().isoformat(),
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'timestamp': now.isoformat(),
+            'time': now.strftime('%Y-%m-%d %H:%M:%S'),
+            'date': now.strftime('%Y-%m-%d'),
             'account_id': account_id,
             'strategy_type': strategy_type,
             'rsi_value': rsi_value,
@@ -147,7 +165,7 @@ def record_execution(account_id, strategy_type, coins, rsi_value, result):
         with open(execution_file, 'a', encoding='utf-8') as f:
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
         
-        log(f"✅ [{account_id}/{strategy_type}] 执行记录已保存")
+        log(f"✅ [{account_id}/{strategy_type}] 执行记录已保存到: {execution_file.name}")
     except Exception as e:
         log(f"❌ [{account_id}/{strategy_type}] 保存执行记录失败: {e}")
 

@@ -419,6 +419,18 @@
                 <input type="date" id="dateSelector" class="date-input" onchange="selectDate()">
                 <button class="nav-btn" onclick="loadTodayData()">今天</button>
             </div>
+            
+            <!-- 日期提示 -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 20px; border-radius: 10px; margin-top: 15px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
+                <span style="font-size: 24px;">💡</span>
+                <div style="flex: 1;">
+                    <div style="font-weight: bold; margin-bottom: 4px;">📅 日期导航提示</div>
+                    <div style="font-size: 14px; opacity: 0.95;">
+                        当前显示 <strong id="currentDateHint">今天</strong> 的数据。如需查看历史交易记录，请点击 <strong>◀ 前一天</strong> 按钮，或使用日期选择器。
+                        <span style="opacity: 0.8; margin-left: 10px;">（系统已导入2月1日-25日的数据）</span>
+                    </div>
+                </div>
+            </div>
 
             <!-- 说明文档面板 -->
             <div class="info-panel">
@@ -1237,6 +1249,17 @@
             const dateStr = formatDate(currentDate);
             document.getElementById('currentDateDisplay').textContent = dateStr;
             document.getElementById('dateSelector').value = dateStr;
+            
+            // 更新提示文本
+            const today = formatDate(new Date());
+            const hintElement = document.getElementById('currentDateHint');
+            if (hintElement) {
+                if (dateStr === today) {
+                    hintElement.textContent = '今天';
+                } else {
+                    hintElement.textContent = dateStr;
+                }
+            }
         }
 
         // 格式化日期

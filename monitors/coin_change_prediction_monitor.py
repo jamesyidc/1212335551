@@ -48,13 +48,16 @@ def fetch_coin_change_history(date=None):
     """获取指定日期0-2点的币种涨跌历史数据
     
     Args:
-        date: 日期字符串，格式为YYYY-MM-DD，默认为今天
+        date: 日期字符串，格式为YYYY-MM-DD，默认为今天（北京时间）
     """
     try:
         if date is None:
-            date = datetime.now().strftime('%Y-%m-%d')
+            # 使用北京时间获取当前日期
+            now_utc = datetime.now(timezone.utc)
+            now_beijing = now_utc + timedelta(hours=8)
+            date = now_beijing.strftime('%Y-%m-%d')
         
-        url = f"https://9002-iopxcqas7abbrajoi4k4x-2e77fc33.sandbox.novita.ai/api/coin-change-tracker/history?date={date}"
+        url = f"http://localhost:9002/api/coin-change-tracker/history?date={date}"
         response = requests.get(url, timeout=30)
         
         if response.status_code == 200:
@@ -198,10 +201,14 @@ def determine_market_signal(color_counts):
     if blank > 0 and green == 0 and red == 0 and yellow == 0:
         return "空头强控盘", "⚪⚪⚪ 0点-2点全部为空白，空头强控盘，建议观望。操作提示：不参与"
     
-    # 情况5: 红色+空白且空白占比>25%（诱空）
-    # 必须满足：有空白、空白占比>25%、没有绿色、没有黄色
-    if blank > 0 and blank_ratio > 25 and green == 0 and yellow == 0:
-        return "诱空试盘抄底", "⚪🔴 红色+空白且空白占比>25%，诱空行情，可以试盘抄底。操作提示：低点做多"
+    # 情况5: 红色+空白且空白占比>=25%（诱空）
+    # 必须满足：有空白、空白占比>=25%、没有绿色
+    # 补充：可以有黄色，只要没有绿色即可
+    if blank > 0 and blank_ratio >= 25 and green == 0:
+        if yellow > 0:
+            return "诱空试盘抄底", f"⚪🔴🟡 红色+空白+黄色且空白占比{blank_ratio:.1f}%>=25%，诱空行情，可以试盘抄底。操作提示：低点做多"
+        else:
+            return "诱空试盘抄底", f"⚪🔴 红色+空白且空白占比{blank_ratio:.1f}%>=25%，诱空行情，可以试盘抄底。操作提示：低点做多"
     
     # 情况4: 全部绿色（诱多）
     if green > 0 and red == 0 and yellow == 0 and blank == 0:
@@ -237,7 +244,7 @@ def determine_market_signal(color_counts):
     return "观望", "⚪ 柱状图混合分布，建议观望"
 
 def save_prediction_data(color_counts, signal, description, is_temp=False):
-    """保存预判数据到文件
+    """保存预判数据到JSONL文件（按日期分文件）
     
     Args:
         color_counts: 颜色统计
@@ -258,51 +265,32 @@ def save_prediction_data(color_counts, signal, description, is_temp=False):
             "color_counts": color_counts,
             "signal": signal,
             "description": description,
-            "is_temp": is_temp  # 标记是否为临时数据
+            "is_temp": is_temp,  # 标记是否为临时数据
+            "is_final": not is_temp  # 标记是否为最终预判（2点）
         }
         
+        # 统一使用JSONL格式，按日期分文件
+        date_str = now.strftime('%Y%m%d')  # 格式：20260226
+        prediction_dir = "/home/user/webapp/data/daily_predictions"
+        os.makedirs(prediction_dir, exist_ok=True)
+        
+        # 文件名格式：prediction_YYYYMMDD.jsonl
+        prediction_file = os.path.join(prediction_dir, f"prediction_{date_str}.jsonl")
+        
+        # 追加模式写入JSONL
+        with open(prediction_file, 'a', encoding='utf-8') as f:
+            json.dump(prediction_data, f, ensure_ascii=False)
+            f.write('\n')
+        
         if is_temp:
-            # 0-2点之间：写入临时JSONL文件（追加模式，但每天重新开始）
-            temp_file = "/home/user/webapp/data/daily_predictions/prediction_temp_today.jsonl"
-            os.makedirs(os.path.dirname(temp_file), exist_ok=True)
-            
-            # 检查是否是新的一天，如果是则清空文件
-            if os.path.exists(temp_file):
-                try:
-                    with open(temp_file, 'r', encoding='utf-8') as f:
-                        first_line = f.readline().strip()
-                        if first_line:
-                            first_data = json.loads(first_line)
-                            if first_data.get('date') != prediction_data['date']:
-                                # 新的一天，清空文件
-                                open(temp_file, 'w').close()
-                                print(f"🆕 新的一天，已清空临时文件")
-                except:
-                    pass
-            
-            # 追加写入（每次更新都追加一条记录）
-            with open(temp_file, 'a', encoding='utf-8') as f:
-                json.dump(prediction_data, f, ensure_ascii=False)
-                f.write('\n')
-            
-            print(f"📝 临时预判数据已追加到: {temp_file}")
+            print(f"📝 临时预判数据已追加到: {prediction_file}")
         else:
-            # 2点后：写入正式JSON文件（覆盖模式）
-            date_str = now.strftime('%Y-%m-%d')
-            prediction_dir = "/home/user/webapp/data/daily_predictions"
-            os.makedirs(prediction_dir, exist_ok=True)
-            
-            prediction_file = os.path.join(prediction_dir, f"prediction_{date_str}.json")
-            
-            with open(prediction_file, 'w', encoding='utf-8') as f:
-                json.dump(prediction_data, f, ensure_ascii=False, indent=2)
-            
-            print(f"💾 正式预判数据已保存到: {prediction_file}")
-            
-            # 同时保存到旧的位置（兼容性）
-            old_file = "/home/user/webapp/data/daily_prediction.json"
-            with open(old_file, 'w', encoding='utf-8') as f:
-                json.dump(prediction_data, f, ensure_ascii=False, indent=2)
+            print(f"💾 最终预判数据已保存到: {prediction_file}")
+        
+        # 兼容旧代码：同时保存最新数据到旧位置（JSON格式）
+        old_file = "/home/user/webapp/data/daily_prediction.json"
+        with open(old_file, 'w', encoding='utf-8') as f:
+            json.dump(prediction_data, f, ensure_ascii=False, indent=2)
         
         return True
     except Exception as e:
