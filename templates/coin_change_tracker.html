@@ -337,11 +337,18 @@
                     <h1 class="text-2xl font-bold text-gray-800">
                         <i class="fas fa-chart-line text-blue-600 mr-2"></i>
                         27币涨跌幅追踪系统
+                        <span id="currentDateDisplay" class="ml-3 text-lg text-blue-600 font-normal"></span>
                     </h1>
-                    <button onclick="forceRefreshData()" class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500 to-green-600 text-white text-sm rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg" title="强制刷新数据，清除缓存">
-                        <i class="fas fa-sync-alt mr-1"></i>
-                        刷新数据
-                    </button>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="location.reload(true)" class="inline-flex items-center px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-sm font-medium rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-md hover:shadow-lg" title="强制刷新页面，清除所有缓存">
+                            <i class="fas fa-redo mr-2"></i>
+                            强制刷新页面
+                        </button>
+                        <button onclick="forceRefreshData()" class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500 to-green-600 text-white text-sm rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg" title="刷新数据，保留页面状态">
+                            <i class="fas fa-sync-alt mr-1"></i>
+                            刷新数据
+                        </button>
+                    </div>
                 </div>
                 <div class="flex items-center space-x-4">
                     <span class="text-sm text-gray-600">
@@ -10251,6 +10258,49 @@ pm2 status                                                # 查看所有进程�
             console.log('🚀 页面初始化开始...');
             const startTime = performance.now();
             
+            // 🆕 日期同步检查（2026-02-27）- 防止浏览器缓存旧数据
+            try {
+                const beijingTime = new Date(Date.now() + 8 * 3600000);
+                const clientDate = beijingTime.toISOString().split('T')[0];
+                
+                const syncResponse = await fetch(`/api/coin-change-tracker/daily-prediction?_t=${Date.now()}`, {
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (syncResponse.ok) {
+                    const syncResult = await syncResponse.json();
+                    if (syncResult.success && syncResult.data) {
+                        const serverDate = syncResult.data.date;
+                        
+                        if (clientDate !== serverDate) {
+                            console.warn(`⚠️ 日期不同步！客户端: ${clientDate}, 服务器: ${serverDate}`);
+                            console.log('🔄 1秒后自动刷新页面以获取最新数据...');
+                            
+                            // 显示提示信息
+                            const alertDiv = document.createElement('div');
+                            alertDiv.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10000;background:#ff9800;color:#fff;padding:15px 30px;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.3);font-size:16px;';
+                            alertDiv.innerHTML = `⚠️ 检测到日期不同步（服务器: ${serverDate}），正在刷新...`;
+                            document.body.appendChild(alertDiv);
+                            
+                            // 延迟1秒后刷新，避免无限循环
+                            setTimeout(() => {
+                                location.reload(true);
+                            }, 1000);
+                            return; // 终止当前加载流程
+                        } else {
+                            console.log(`✅ 日期同步正常: ${clientDate}`);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('❌ 日期同步检查失败:', error);
+                // 检查失败不影响正常加载流程
+            }
+            
             // 设置30秒强制隐藏超时，防止页面永久被遮罩层覆盖
             LoadingManager.forceHideTimeout = setTimeout(() => {
                 console.warn('⚠️ 加载超过30秒，强制隐藏遮罩层');
@@ -10389,6 +10439,15 @@ pm2 status                                                # 查看所有进程�
                         console.error('❌ 账户余额加载失败:', error);
                     });
                 }, 100);
+                
+                // 🆕 更新当前日期显示（2026-02-27）
+                const beijingTime = new Date(Date.now() + 8 * 3600000);
+                const displayDate = beijingTime.toISOString().split('T')[0];
+                const dateDisplayEl = document.getElementById('currentDateDisplay');
+                if (dateDisplayEl) {
+                    dateDisplayEl.textContent = `📅 ${displayDate}`;
+                    dateDisplayEl.title = '当前显示日期（北京时间）';
+                }
                 
                 const endTime = performance.now();
                 console.log(`✅ 页面初始化完成，总耗时: ${((endTime - startTime) / 1000).toFixed(2)}秒`);
