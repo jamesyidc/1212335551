@@ -6317,6 +6317,16 @@ pm2 status                                                # 查看所有进程�
                     });
                     const changes = historyData.map(d => d.total_change);
                     
+                    // 🔍 调试：检查changes数据
+                    console.log('📊 changes数组生成完成:', {
+                        length: changes.length,
+                        hasNullOrUndefined: changes.some(v => v === null || v === undefined),
+                        sample: changes.slice(0, 5),
+                        allZero: changes.every(v => v === 0),
+                        min: Math.min(...changes.filter(v => v !== null && v !== undefined)),
+                        max: Math.max(...changes.filter(v => v !== null && v !== undefined))
+                    });
+                    
                     // 加载RSI数据
                     let rsiUrl = '/api/coin-change-tracker/rsi-history?limit=1440';
                     if (date) {
@@ -6589,6 +6599,16 @@ pm2 status                                                # 查看所有进程�
                     const minIndex = changes.indexOf(minChange);
                     
                     console.log('📊 准备更新趋势图，数据:', {times, changes, maxChange, minChange});
+                    
+                    // 🔍 额外调试：检查series数据
+                    console.log('🔍 series[0]数据检查:', {
+                        name: '27币涨跌幅之和',
+                        dataLength: changes.length,
+                        dataType: typeof changes,
+                        isArray: Array.isArray(changes),
+                        firstFew: changes.slice(0, 10),
+                        lastFew: changes.slice(-10)
+                    });
                     
                     // 更新趋势图，添加最高价和最低价标记
                     // 使用 notMerge: true 强制重新渲染整个图表
@@ -8061,10 +8081,19 @@ pm2 status                                                # 查看所有进程�
                 } else {
                     console.warn('历史数据为空或加载失败');
                     console.warn('Result:', result);
-                    // 如果没有数据，清空图表
+                    // 如果没有数据，清空图表（保留两条series：27币涨跌幅之和 + RSI之和）
                     trendChart.setOption({
                         xAxis: { data: [] },
-                        series: [{ data: [] }]
+                        series: [
+                            {
+                                name: '27币涨跌幅之和',
+                                data: []
+                            },
+                            {
+                                name: 'RSI之和',
+                                data: []
+                            }
+                        ]
                     }, true, true); // notMerge=true, lazyUpdate=true
                     
                     // 清空柱状图
