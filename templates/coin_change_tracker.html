@@ -6322,9 +6322,18 @@ pm2 status                                                # 查看所有进程�
                         length: changes.length,
                         hasNullOrUndefined: changes.some(v => v === null || v === undefined),
                         sample: changes.slice(0, 5),
+                        lastSample: changes.slice(-5),
                         allZero: changes.every(v => v === 0),
                         min: Math.min(...changes.filter(v => v !== null && v !== undefined)),
                         max: Math.max(...changes.filter(v => v !== null && v !== undefined))
+                    });
+                    
+                    // 🔥 重要：如果changes数组包含null/undefined，替换为0
+                    const cleanedChanges = changes.map(v => v === null || v === undefined ? 0 : v);
+                    console.log('🧹 清理后的changes数组:', {
+                        length: cleanedChanges.length,
+                        sample: cleanedChanges.slice(0, 5),
+                        lastSample: cleanedChanges.slice(-5)
                     });
                     
                     // 加载RSI数据
@@ -6766,7 +6775,7 @@ pm2 status                                                # 查看所有进程�
                             name: '27币涨跌幅之和',
                             type: 'line',
                             smooth: true,
-                            data: changes,
+                            data: cleanedChanges,
                             areaStyle: {
                                 color: {
                                     type: 'linear',
@@ -6805,7 +6814,7 @@ pm2 status                                                # 查看所有进程�
                                                 name: `📊${signal}`,
                                                 value: signal,
                                                 xAxis: morning00Index,
-                                                yAxis: changes[morning00Index],
+                                                yAxis: cleanedChanges[morning00Index],
                                                 itemStyle: {
                                                     color: signalColor,
                                                     borderColor: '#fff',
@@ -6859,7 +6868,7 @@ pm2 status                                                # 查看所有进程�
                                                         name: '🚨暴跌预警',
                                                         value: '暴跌预警',
                                                         xAxis: timeIndex,
-                                                        yAxis: changes[timeIndex],
+                                                        yAxis: cleanedChanges[timeIndex],
                                                         itemStyle: {
                                                             color: '#DC2626',  // 深红色
                                                             borderColor: '#fff',
@@ -7136,22 +7145,22 @@ pm2 status                                                # 查看所有进程�
                                                 }
                                             }
                                             
-                                            if (timeIndex >= 0 && changes[timeIndex] !== undefined) {
+                                            if (timeIndex >= 0 && cleanedChanges[timeIndex] !== undefined) {
                                                 const isTopSignal = sentimentText.includes('见顶信号');
                                                 const isBottomSignal = sentimentText.includes('见底信号');
                                                 const isTopDivergence = sentimentText.includes('顶部背离');
                                                 const isBottomDivergence = sentimentText.includes('底部背离');
                                                 
                                                 // 🚀 性能优化：注释掉详细日志
-                                                // console.log(`🔍 情绪信号: ${sentimentText} @ ${beijingTime}, 索引=${timeIndex}, 涨跌幅=${changes[timeIndex].toFixed(2)}%`);
+                                                // console.log(`🔍 情绪信号: ${sentimentText} @ ${beijingTime}, 索引=${timeIndex}, 涨跌幅=${cleanedChanges[timeIndex].toFixed(2)}%`);
                                                 
                                                 // ⚠️ 见顶信号 - 深红色倒三角（最强烈的顶部警告）
                                                 if (isTopSignal) {
                                                     points.push({
                                                         name: '⚠️见顶信号',
-                                                        value: `见顶\n${changes[timeIndex].toFixed(1)}%`,
+                                                        value: `见顶\n${cleanedChanges[timeIndex].toFixed(1)}%`,
                                                         xAxis: timeIndex,
-                                                        yAxis: changes[timeIndex],
+                                                        yAxis: cleanedChanges[timeIndex],
                                                         itemStyle: {
                                                             color: '#DC2626',
                                                             borderColor: '#fff',
@@ -7178,9 +7187,9 @@ pm2 status                                                # 查看所有进程�
                                                 if (isTopDivergence) {
                                                     points.push({
                                                         name: '⛔顶部背离',
-                                                        value: `顶背\n${changes[timeIndex].toFixed(1)}%`,
+                                                        value: `顶背\n${cleanedChanges[timeIndex].toFixed(1)}%`,
                                                         xAxis: timeIndex,
-                                                        yAxis: changes[timeIndex],
+                                                        yAxis: cleanedChanges[timeIndex],
                                                         itemStyle: {
                                                             color: '#F97316',
                                                             borderColor: '#fff',
@@ -7206,9 +7215,9 @@ pm2 status                                                # 查看所有进程�
                                                 if (isBottomSignal) {
                                                     points.push({
                                                         name: '🔥见底信号',
-                                                        value: `见底\n${changes[timeIndex].toFixed(1)}%`,
+                                                        value: `见底\n${cleanedChanges[timeIndex].toFixed(1)}%`,
                                                         xAxis: timeIndex,
-                                                        yAxis: changes[timeIndex],
+                                                        yAxis: cleanedChanges[timeIndex],
                                                         itemStyle: {
                                                             color: '#059669',
                                                             borderColor: '#fff',
@@ -7235,9 +7244,9 @@ pm2 status                                                # 查看所有进程�
                                                 if (isBottomDivergence) {
                                                     points.push({
                                                         name: '🚀底部背离',
-                                                        value: `底背\n${changes[timeIndex].toFixed(1)}%`,
+                                                        value: `底背\n${cleanedChanges[timeIndex].toFixed(1)}%`,
                                                         xAxis: timeIndex,
-                                                        yAxis: changes[timeIndex],
+                                                        yAxis: cleanedChanges[timeIndex],
                                                         itemStyle: {
                                                             color: '#10B981',
                                                             borderColor: '#fff',
@@ -7928,14 +7937,14 @@ pm2 status                                                # 查看所有进程�
                                     }
                                 }
                                 
-                                if (timeIndex >= 0 && changes[timeIndex] !== undefined) {
+                                if (timeIndex >= 0 && cleanedChanges[timeIndex] !== undefined) {
                                     const isLong = log.details.posSide === 'long';
                                     const instId = log.details.instId || '';
                                     const symbol = instId.replace('-USDT-SWAP', '');
                                     
                                     tradingMarkers.push({
                                         name: `${isLong ? '开多' : '开空'}: ${symbol}`,
-                                        value: [timeIndex, changes[timeIndex]],
+                                        value: [timeIndex, cleanedChanges[timeIndex]],
                                         positionType: log.details.posSide,
                                         timestamp: timeStr,
                                         symbol: symbol,
