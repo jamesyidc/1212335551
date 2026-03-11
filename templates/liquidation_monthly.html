@@ -302,7 +302,7 @@
             <div class="info-text">
                 📈 数据说明：<span class="info-highlight">30分钟</span>为一个数据点，展示<span class="info-highlight">向前30天</span>的1小时爆仓金额趋势
                 <br>
-                🔴 标记规则：爆仓金额 ≥ <span class="info-highlight">1.5亿</span>时标记，标记点<span class="info-highlight">左右1小时内</span>只允许一个顶点
+                🔴 标记规则：爆仓金额 ≥ <span class="info-highlight">1.45亿</span>时标记，标记点<span class="info-highlight">左右1小时内</span>只允许一个顶点
                 <br>
                 🎯 多空标记：点击标记点设置<span class="info-highlight" style="color: #22c55e;">多头爆仓(绿色主升)</span>或<span class="info-highlight" style="color: #ef4444;">空头爆仓(红色主跌)</span>
             </div>
@@ -491,7 +491,7 @@
         
         // 标记高点函数（左右1小时内只允许一个）
         function markHighPointsWithInterval(data) {
-            const threshold = 15000; // 1.5亿 = 15000万
+            const threshold = 14500; // 1.45亿 = 14500万（优化后可标记1.47亿等高点）
             const oneHour = 60 * 60 * 1000; // 1小时的毫秒数
             
             const candidates = data
@@ -707,7 +707,7 @@
                             symbol: 'none',
                             label: {
                                 position: 'end',
-                                formatter: '1.5亿警戒线',
+                                formatter: '1.45亿警戒线',
                                 fontSize: 12,
                                 color: '#ff4444'
                             },
@@ -716,7 +716,7 @@
                                 type: 'dashed',
                                 width: 2
                             },
-                            data: [{ yAxis: 15000 }]
+                            data: [{ yAxis: 14500 }]
                         }
                     }
                 ]
@@ -847,10 +847,39 @@
         }
         
         // 设置标记类型
-        function setMarkType(type) {
+        async function setMarkType(type) {
             if (currentMarkIndex >= 0) {
-                chartData[currentMarkIndex].markType = type;
+                const item = chartData[currentMarkIndex];
+                item.markType = type;
                 console.log(`✅ 设置标记点 ${currentMarkIndex} 为: ${type === 'long' ? '多头爆仓' : '空头爆仓'}`);
+                
+                // 发送Telegram通知（最高优先级，连续5次）
+                try {
+                    const response = await fetch('/api/liquidation/mark-notify', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            mark_type: type,
+                            time: new Date(item.time).toISOString(),
+                            amount: item.amount
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        console.log(`✅ Telegram通知已发送: ${result.sent_count}/5 次 - ${result.trend_name}`);
+                        // 显示成功提示
+                        alert(`✅ 标记已设置！\n\nTelegram通知已发送 ${result.sent_count}/5 次\n类型: ${result.trend_name}`);
+                    } else {
+                        console.error('❌ Telegram通知发送失败:', result.error);
+                        alert(`⚠️ 标记已设置，但Telegram通知发送失败: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('❌ 发送Telegram通知异常:', error);
+                    alert(`⚠️ 标记已设置，但Telegram通知发送异常: ${error.message}`);
+                }
                 
                 // 保存到localStorage
                 saveMarksToStorage();

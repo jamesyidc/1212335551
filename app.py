@@ -30,6 +30,12 @@ app = Flask(__name__,
             template_folder='/home/user/webapp/templates',
             static_folder='/home/user/webapp/static',
             static_url_path='/static')
+
+# 禁用模板缓存（开发环境）
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.jinja_env.auto_reload = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
 # 启用gzip压缩 - 减少74KB到约15-20KB
 Compress(app)
 
@@ -3258,6 +3264,157 @@ def api_liquidation_30days():
         return jsonify({
             'success': False,
             'error': f'获取30天数据失败: {str(e)}',
+            'traceback': traceback.format_exc()
+        })
+
+@app.route('/api/liquidation/mark-notify', methods=['POST'])
+def api_liquidation_mark_notify():
+    """爆仓月线图标记通知API - 发送Telegram通知"""
+    try:
+        import requests
+        import json as json_module
+        from datetime import datetime, timezone, timedelta
+        from pathlib import Path
+        
+        # 获取请求数据
+        data = request.get_json()
+        mark_type = data.get('mark_type')  # 'long' 或 'short'
+        time_str = data.get('time')  # 时间字符串
+        amount = data.get('amount')  # 爆仓金额（万美元）
+        
+        if not all([mark_type, time_str, amount]):
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数: mark_type, time, amount'
+            })
+        
+        # 读取Telegram配置
+        config_path = Path('/home/user/webapp/config/configs/telegram_config.json')
+        if not config_path.exists():
+            # 尝试使用Python配置文件
+            import sys
+            sys.path.insert(0, '/home/user/webapp/config')
+            try:
+                from telegram_config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+                bot_token = TELEGRAM_BOT_TOKEN
+                chat_id = TELEGRAM_CHAT_ID
+            except:
+                return jsonify({
+                    'success': False,
+                    'error': '无法加载Telegram配置'
+                })
+        else:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                tg_config = json_module.load(f)
+            bot_token = tg_config.get('bot_token')
+            chat_id = tg_config.get('chat_id')
+        
+        if not bot_token or not chat_id:
+            return jsonify({
+                'success': False,
+                'error': 'Telegram配置不完整'
+            })
+        
+        # 解析时间
+        try:
+            dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+            beijing_tz = timezone(timedelta(hours=8))
+            dt_beijing = dt.astimezone(beijing_tz)
+            time_display = dt_beijing.strftime('%Y-%m-%d %H:%M')
+        except:
+            time_display = time_str
+        
+        # 计算金额（亿）
+        amount_yi = amount / 10000
+        
+        # 根据标记类型构造不同的消息
+        if mark_type == 'long':
+            trend_name = "多头爆仓"
+            trend_emoji = "🟢"
+            trend_desc = "主升行情"
+            action = "做多"
+            reason = "大量多头爆仓后，空方力量耗尽，价格将反弹上涨"
+        else:  # short
+            trend_name = "空头爆仓"
+            trend_emoji = "🔴"
+            trend_desc = "主跌行情"
+            action = "做空"
+            reason = "大量空头爆仓后，多方力量耗尽，价格将继续下跌"
+        
+        beijing_time = datetime.now(timezone(timedelta(hours=8)))
+        current_time_str = beijing_time.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 构造富文本消息
+        message = f"""
+🚨🚨🚨 <b>【最高优先级】爆仓趋势转变通知</b> 🚨🚨🚨
+
+{trend_emoji} <b>趋势类型:</b> {trend_name} → {trend_desc}
+
+⏰ <b>标记时间:</b> {current_time_str}
+📅 <b>爆仓发生时间:</b> {time_display}
+💰 <b>爆仓金额:</b> {amount_yi:.2f}亿美元 ({amount:.0f}万美元)
+
+📊 <b>市场分析:</b>
+{reason}
+
+🎯 <b>交易建议:</b>
+✅ <b>建议操作:</b> {action}
+⚡ <b>优先级:</b> <code>最高</code>
+🔥 <b>信号强度:</b> <code>极强</code>
+
+⚠️ <b>风险提示:</b>
+1. 此为历史数据回测标记
+2. 实际交易需结合实时行情
+3. 注意设置止损止盈
+4. 建议分批建仓
+
+💡 <b>操作要点:</b>
+- 顺势而为，跟随趋势
+- 严格执行风险管理
+- 保持冷静，不要追涨杀跌
+
+---
+🔗 查看详情: https://9002-imp6ky5dtwten0w001hfy-82b888ba.sandbox.novita.ai/liquidation-monthly
+"""
+        
+        # 发送Telegram消息（连续发送5次，最高优先级）
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            'chat_id': chat_id,
+            'text': message,
+            'parse_mode': 'HTML'
+        }
+        
+        success_count = 0
+        for i in range(5):
+            try:
+                response = requests.post(url, json=payload, timeout=10)
+                if response.status_code == 200:
+                    success_count += 1
+                    print(f"✅ 第{i+1}次Telegram通知发送成功")
+                else:
+                    print(f"❌ 第{i+1}次Telegram通知发送失败: {response.text}")
+                
+                # 间隔0.5秒
+                if i < 4:
+                    import time
+                    time.sleep(0.5)
+            except Exception as send_error:
+                print(f"❌ 第{i+1}次Telegram发送异常: {str(send_error)}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Telegram通知已发送 {success_count}/5 次',
+            'sent_count': success_count,
+            'mark_type': mark_type,
+            'trend_name': trend_name
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
             'traceback': traceback.format_exc()
         })
 
@@ -14995,6 +15152,16 @@ def okx_trading_fangfang12():
     response.headers['Expires'] = '-1'
     return response
 
+@app.route('/okx-accounts-diagnostic')
+def okx_accounts_diagnostic():
+    """OKX账户配置诊断工具"""
+    response = make_response(render_template('okx_accounts_diagnostic.html'))
+    # 禁用所有缓存
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '-1'
+    return response
+
 @app.route('/okx-trading-marks')
 def okx_trading_marks():
     """OKX交易标记系统 - 在27币涨跌幅趋势图上标记开仓/平仓点"""
@@ -16467,6 +16634,68 @@ def place_okx_order():
             'success': False,
             'error': str(e),
             'traceback': traceback.format_exc()
+        })
+
+@app.route('/api/okx-trading/accounts-config', methods=['GET'])
+def get_okx_accounts_config():
+    """获取OKX账户配置(用于诊断)"""
+    try:
+        import json
+        import os
+        
+        # 从config目录读取账户配置
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'okx_accounts.json')
+        
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                accounts = config.get('accounts', [])
+                default_account = config.get('default_account', accounts[0]['id'] if accounts else None)
+        else:
+            # 如果配置文件不存在,返回默认账户
+            accounts = [
+                {
+                    "id": "account_main",
+                    "name": "主账户",
+                    "apiKey": "b0c18f2d-e014-4ae8-9c3c-cb02161de4db",
+                    "apiSecret": "92F864C599B2CE2EC5186AD14C8B4110",
+                    "passphrase": "Tencent@123"
+                },
+                {
+                    "id": "account_fangfang12",
+                    "name": "Fangfang12",
+                    "apiKey": "e5867a9a-93b7-476f-81ce-093c3aacae0d",
+                    "apiSecret": "4624EE63A9BF3F84250AC71C9A37F47D",
+                    "passphrase": "Tencent@123"
+                },
+                {
+                    "id": "account_anchor",
+                    "name": "锚点账号",
+                    "apiKey": "0b05a729-40eb-4809-b3eb-eb2de75b7e9e",
+                    "apiSecret": "4E4DA8BE3B18D01AA07185A006BF9F8E",
+                    "passphrase": "Tencent@123"
+                },
+                {
+                    "id": "account_poit",
+                    "name": "POIT",
+                    "apiKey": "8650e46c-059b-431d-93cf-55f8c79babdb",
+                    "apiSecret": "4C2BD2AC6A08615EA7F36A6251857FCE",
+                    "passphrase": "Wu666666."
+                }
+            ]
+            default_account = "account_main"
+        
+        return jsonify({
+            'success': True,
+            'accounts': accounts,
+            'default_account': default_account,
+            'total_count': len(accounts)
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
         })
 
 @app.route('/api/okx-accounts/list-with-credentials', methods=['GET'])
@@ -22740,6 +22969,219 @@ def get_rsi_history():
         })
 
 
+def _record_crash_warning_event(date_str, crash_warning, peaks):
+    """记录暴跌预警事件到JSONL文件"""
+    try:
+        from pathlib import Path
+        from datetime import datetime, timezone, timedelta
+        import json
+        
+        # 创建事件目录
+        events_dir = Path('/home/user/webapp/data/crash_warning_events')
+        events_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 事件文件路径（按日期）
+        event_file = events_dir / f'crash_warning_{date_str}.jsonl'
+        
+        # 构造事件记录
+        beijing_time = datetime.now(timezone(timedelta(hours=8)))
+        event_record = {
+            'timestamp': beijing_time.isoformat(),
+            'date': date_str,
+            'signal_type': crash_warning.get('signal_type'),
+            'pattern_name': crash_warning.get('pattern_name'),
+            'consecutive_peaks': crash_warning.get('consecutive_peaks'),
+            'pattern': crash_warning.get('pattern'),
+            'message': crash_warning.get('message'),
+            'peaks_count': len(peaks),
+            'trading_restriction': {
+                'allow_long': False,  # 暴跌预警时不允许做多
+                'allow_short': True   # 只允许做空
+            }
+        }
+        
+        # 追加写入JSONL文件
+        with open(event_file, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(event_record, ensure_ascii=False) + '\n')
+        
+        print(f"✅ 暴跌预警事件已记录: {event_file}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ 记录暴跌预警事件失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def _check_telegram_sent_today(date_str):
+    """检查今天是否已经通过API发送过Telegram通知"""
+    try:
+        from pathlib import Path
+        import json
+        
+        # 通知记录文件
+        notification_dir = Path('/home/user/webapp/data/crash_warning_notifications')
+        notification_dir.mkdir(parents=True, exist_ok=True)
+        
+        notification_file = notification_dir / f'telegram_sent_{date_str}.json'
+        
+        if notification_file.exists():
+            with open(notification_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('sent', False)
+        
+        return False
+    except Exception as e:
+        print(f"❌ 检查通知状态失败: {e}")
+        return False
+
+
+def _mark_telegram_sent(date_str):
+    """标记今天已经发送过Telegram通知"""
+    try:
+        from pathlib import Path
+        from datetime import datetime, timezone, timedelta
+        import json
+        
+        notification_dir = Path('/home/user/webapp/data/crash_warning_notifications')
+        notification_dir.mkdir(parents=True, exist_ok=True)
+        
+        notification_file = notification_dir / f'telegram_sent_{date_str}.json'
+        
+        beijing_time = datetime.now(timezone(timedelta(hours=8)))
+        data = {
+            'sent': True,
+            'timestamp': beijing_time.isoformat(),
+            'date': date_str
+        }
+        
+        with open(notification_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        print(f"✅ 已标记 {date_str} 的Telegram通知已发送")
+        return True
+    except Exception as e:
+        print(f"❌ 标记通知状态失败: {e}")
+        return False
+
+
+def _send_crash_warning_telegram(date_str, crash_warning, peaks):
+    """发送暴跌预警Telegram通知（防重复）"""
+    try:
+        import requests
+        import json
+        import time
+        from pathlib import Path
+        from datetime import datetime, timezone, timedelta
+        
+        # 检查今天是否已经发送过
+        if _check_telegram_sent_today(date_str):
+            print(f"ℹ️ {date_str} 的暴跌预警Telegram通知已发送过，跳过")
+            return False
+        
+        # 读取Telegram配置
+        config_path = Path('/home/user/webapp/config/configs/telegram_config.json')
+        if not config_path.exists():
+            # 尝试使用Python配置文件
+            import sys
+            sys.path.insert(0, '/home/user/webapp/config')
+            try:
+                from telegram_config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+                bot_token = TELEGRAM_BOT_TOKEN
+                chat_id = TELEGRAM_CHAT_ID
+            except:
+                print(f"❌ 无法加载Telegram配置")
+                return False
+        else:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                tg_config = json.load(f)
+            bot_token = tg_config.get('bot_token')
+            chat_id = tg_config.get('chat_id')
+        
+        if not bot_token or not chat_id:
+            print(f"❌ Telegram配置不完整")
+            return False
+        
+        # 构造消息内容
+        pattern_name = crash_warning.get('pattern_name', '暴跌预警')
+        message_text = crash_warning.get('message', '检测到暴跌信号')
+        signal_type = crash_warning.get('signal_type', 'unknown')
+        
+        # 获取波峰信息
+        pattern_info = crash_warning.get('pattern', {})
+        
+        beijing_time = datetime.now(timezone(timedelta(hours=8)))
+        time_str = beijing_time.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 构造富文本消息
+        message = f"""
+🚨🚨🚨 <b>暴跌预警通知</b> 🚨🚨🚨
+
+⏰ <b>时间:</b> {time_str}
+📅 <b>日期:</b> {date_str}
+
+📊 <b>预警类型:</b> {pattern_name}
+🔍 <b>信号:</b> {signal_type}
+
+⚠️ <b>详细信息:</b>
+{message_text}
+
+📈 <b>波峰统计:</b>
+- 总波峰数: {len(peaks)}
+- 连续波峰: {crash_warning.get('consecutive_peaks', 'N/A')}
+
+🎯 <b>交易建议:</b>
+❌ <b>禁止做多</b> - 暴跌风险极高
+✅ <b>仅允许做空</b> - 顺势而为
+
+⚡ <b>风险等级:</b> <code>极高</code>
+
+---
+💡 建议立即查看系统确认信号详情
+"""
+        
+        # 发送Telegram消息（重复3次）
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            'chat_id': chat_id,
+            'text': message,
+            'parse_mode': 'HTML'
+        }
+        
+        success_count = 0
+        for i in range(3):  # 重复发送3次
+            try:
+                response = requests.post(url, json=payload, timeout=10)
+                
+                if response.status_code == 200:
+                    success_count += 1
+                    print(f"✅ 暴跌预警Telegram通知已发送 (第{i+1}次)")
+                else:
+                    print(f"❌ 第{i+1}次发送失败: {response.status_code} - {response.text}")
+                
+                # 两次发送之间间隔1秒
+                if i < 2:
+                    time.sleep(1)
+            except Exception as e:
+                print(f"❌ 第{i+1}次发送异常: {e}")
+        
+        # 标记已发送
+        if success_count > 0:
+            _mark_telegram_sent(date_str)
+            print(f"✅ 暴跌预警Telegram通知共发送 {success_count}/3 次")
+            return True
+        else:
+            print(f"❌ 所有发送尝试均失败")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 发送Telegram通知异常: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 @app.route('/api/coin-change-tracker/wave-peaks', methods=['GET'])
 def get_wave_peaks():
     """获取波峰检测结果"""
@@ -22786,6 +23228,11 @@ def get_wave_peaks():
         peaks, current_state = detector.detect_wave_peaks(data_records)
         false_breakout = detector.detect_false_breakout(peaks)
         crash_warning = detector.detect_crash_warning(peaks)  # 添加暴跌预警检测
+        
+        # 如果检测到暴跌预警，记录事件并发送Telegram通知
+        if crash_warning:
+            _record_crash_warning_event(file_date_str, crash_warning, peaks)
+            _send_crash_warning_telegram(file_date_str, crash_warning, peaks)
         
         # 构造响应数据
         result = {
@@ -22930,6 +23377,146 @@ def get_wave_peaks_history():
             'traceback': traceback.format_exc()
         })
 
+@app.route('/api/coin-change-tracker/crash-warning-events', methods=['GET'])
+def get_crash_warning_events():
+    """获取暴跌预警事件历史
+    
+    参数:
+        date: 单个日期 (YYYY-MM-DD 或 YYYYMMDD)
+        start_date: 开始日期
+        end_date: 结束日期
+    
+    返回:
+        {
+            'success': bool,
+            'events': list,  # 事件列表
+            'date': str,     # 查询日期（如果查询单日）
+            'count': int     # 事件总数
+        }
+    """
+    try:
+        from pathlib import Path
+        from datetime import datetime
+        import json
+        
+        # 获取参数
+        date_str = request.args.get('date', '')  # YYYY-MM-DD 或 YYYYMMDD
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        
+        events_dir = Path('/home/user/webapp/data/crash_warning_events')
+        
+        if not events_dir.exists():
+            return jsonify({
+                'success': True,
+                'events': [],
+                'message': '暂无暴跌预警事件记录'
+            })
+        
+        all_events = []
+        
+        # 如果指定了单个日期
+        if date_str:
+            # 处理日期格式
+            if len(date_str) == 8:  # YYYYMMDD
+                formatted_date = date_str
+            else:  # YYYY-MM-DD
+                formatted_date = date_str.replace('-', '')
+            
+            event_file = events_dir / f'crash_warning_{formatted_date}.jsonl'
+            
+            if event_file.exists():
+                with open(event_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                event = json.loads(line)
+                                all_events.append(event)
+                            except json.JSONDecodeError:
+                                continue
+            
+            response = make_response(jsonify({
+                'success': True,
+                'date': formatted_date,
+                'events': all_events,
+                'count': len(all_events)
+            }))
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
+        
+        # 如果指定了日期范围
+        if start_date and end_date:
+            # 处理日期格式
+            if '-' in start_date:
+                start_date = start_date.replace('-', '')
+            if '-' in end_date:
+                end_date = end_date.replace('-', '')
+            
+            # 获取所有事件文件
+            event_files = sorted(events_dir.glob('crash_warning_*.jsonl'))
+            
+            for event_file in event_files:
+                file_date = event_file.stem.replace('crash_warning_', '')
+                
+                # 检查是否在日期范围内
+                if start_date <= file_date <= end_date:
+                    with open(event_file, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                try:
+                                    event = json.loads(line)
+                                    all_events.append(event)
+                                except json.JSONDecodeError:
+                                    continue
+            
+            response = make_response(jsonify({
+                'success': True,
+                'start_date': start_date,
+                'end_date': end_date,
+                'events': all_events,
+                'count': len(all_events)
+            }))
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
+        
+        # 默认返回所有事件
+        event_files = sorted(events_dir.glob('crash_warning_*.jsonl'))
+        
+        for event_file in event_files:
+            with open(event_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            event = json.loads(line)
+                            all_events.append(event)
+                        except json.JSONDecodeError:
+                            continue
+        
+        response = make_response(jsonify({
+            'success': True,
+            'events': all_events,
+            'count': len(all_events)
+        }))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        })
+
 @app.route('/api/coin-change-tracker/daily-prediction', methods=['GET'])
 def get_daily_prediction():
     """获取当日行情预判数据
@@ -22945,39 +23532,52 @@ def get_daily_prediction():
         now_beijing = now_utc + timedelta(hours=8)
         today = now_beijing.strftime('%Y-%m-%d')
         
-        # 1. 优先尝试读取临时JSONL文件（最新的一条记录）
-        temp_file = Path('data/daily_predictions/prediction_temp_today.jsonl')
-        if temp_file.exists():
-            try:
-                with open(temp_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                    if lines:
-                        # 读取最后一条记录（最新的）
-                        last_line = lines[-1].strip()
-                        if last_line:
-                            temp_data = json.loads(last_line)
-                            data_date = temp_data.get('date', '')
-                            
-                            # 检查是否是今天的数据
-                            if data_date == today:
-                                response = make_response(jsonify({
-                                    'success': True,
-                                    'data': temp_data,
-                                    'source': 'temp'  # 标记数据来源
-                                }))
-                                response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
-                                response.headers['Pragma'] = 'no-cache'
-                                response.headers['Expires'] = '0'
-                                return response
-            except Exception as e:
-                print(f"⚠️ 读取临时文件失败: {e}")
+        # 🔥 修复：凌晨2点后优先使用正式数据，2点前使用临时数据
+        current_hour = now_beijing.hour
+        use_temp_data = current_hour < 2  # 0点和1点使用临时数据
         
-        # 2. 读取正式JSON文件（按日期）
-        prediction_file = Path(f'data/daily_predictions/prediction_{today}.json')
+        # 1. 如果在0-2点之间，优先尝试读取临时JSONL文件（最新的一条记录）
+        if use_temp_data:
+            temp_file = Path('data/daily_predictions/prediction_temp_today.jsonl')
+            if temp_file.exists():
+                try:
+                    with open(temp_file, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        if lines:
+                            # 读取最后一条记录（最新的）
+                            last_line = lines[-1].strip()
+                            if last_line:
+                                temp_data = json.loads(last_line)
+                                data_date = temp_data.get('date', '')
+                                
+                                # 检查是否是今天的数据
+                                if data_date == today:
+                                    print(f"✅ 使用临时数据 (当前时间: {now_beijing.strftime('%H:%M:%S')})")
+                                    response = make_response(jsonify({
+                                        'success': True,
+                                        'data': temp_data,
+                                        'source': 'temp'  # 标记数据来源
+                                    }))
+                                    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+                                    response.headers['Pragma'] = 'no-cache'
+                                    response.headers['Expires'] = '0'
+                                    return response
+                except Exception as e:
+                    print(f"⚠️ 读取临时文件失败: {e}")
+        else:
+            print(f"✅ 凌晨2点后，优先使用正式数据 (当前时间: {now_beijing.strftime('%H:%M:%S')})")
+        
+        # 2. 读取正式JSONL文件（按日期）
+        today_short = now_beijing.strftime('%Y%m%d')  # 20260226
+        prediction_file = Path(f'data/daily_predictions/prediction_{today_short}.jsonl')
         
         if not prediction_file.exists():
-            # 兼容旧格式
-            prediction_file = Path('data/daily_prediction.json')
+            # 兼容旧的JSON格式
+            prediction_file = Path(f'data/daily_predictions/prediction_{today}.json')
+            
+            if not prediction_file.exists():
+                # 最后尝试旧位置
+                prediction_file = Path('data/daily_prediction.json')
         
         if not prediction_file.exists():
             return jsonify({
@@ -22986,8 +23586,32 @@ def get_daily_prediction():
                 'message': '预判数据将在每天0-2点生成，2点后生成最终预判'
             })
         
-        with open(prediction_file, 'r', encoding='utf-8') as f:
-            prediction_data = json.load(f)
+        # 根据文件扩展名判断格式
+        if prediction_file.suffix == '.jsonl':
+            # 读取JSONL文件（取最后一条记录，即最终预判）
+            with open(prediction_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                if lines:
+                    # 查找最后一条 is_final=true 的记录
+                    for line in reversed(lines):
+                        line = line.strip()
+                        if line:
+                            data = json.loads(line)
+                            if data.get('is_final', False):
+                                prediction_data = data
+                                break
+                    else:
+                        # 如果没有找到 is_final=true，使用最后一条
+                        prediction_data = json.loads(lines[-1].strip())
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': 'JSONL文件为空'
+                    })
+        else:
+            # 读取JSON文件（兼容旧格式）
+            with open(prediction_file, 'r', encoding='utf-8') as f:
+                prediction_data = json.load(f)
         
         # 检查数据是否是今天的
         data_date = prediction_data.get('date', '')
@@ -23004,6 +23628,253 @@ def get_daily_prediction():
             'success': True,
             'data': prediction_data,
             'source': 'final'  # 标记数据来源
+        }))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        })
+
+
+@app.route('/api/coin-change-tracker/similar-predictions', methods=['GET'])
+def get_similar_predictions():
+    """查找与当天预判相似的历史日期
+    
+    匹配规则：
+    1. 历史日期必须包含当天所有存在的颜色（绿/红/黄）
+    2. 按差值排序：|历史绿-当天绿| + |历史红-当天红| + |历史黄-当天黄|
+    3. 返回差值最小的前N个历史日期
+    
+    Query params:
+        - date: 查询日期（可选，默认今天）
+        - limit: 返回数量（可选，默认5）
+    
+    Returns:
+        {
+            'success': bool,
+            'current': {当天预判数据},
+            'similar_days': [
+                {
+                    'date': str,
+                    'color_counts': dict,
+                    'signal': str,
+                    'difference': int,  # 差值
+                    'daily_stats': {
+                        'lowest': float,
+                        'highest': float, 
+                        'max_increase': float
+                    }
+                }
+            ]
+        }
+    """
+    try:
+        from datetime import datetime, timedelta, timezone
+        import glob
+        
+        # 获取查询日期
+        query_date = request.args.get('date')
+        limit = int(request.args.get('limit', 5))
+        
+        if not query_date:
+            # 使用北京时间
+            now_utc = datetime.now(timezone.utc)
+            now_beijing = now_utc + timedelta(hours=8)
+            query_date = now_beijing.strftime('%Y-%m-%d')
+        
+        # 读取当天预判数据
+        current_file = Path(f'data/daily_predictions/prediction_{query_date}.json')
+        if not current_file.exists():
+            return jsonify({
+                'success': False,
+                'error': f'未找到{query_date}的预判数据'
+            })
+        
+        with open(current_file, 'r', encoding='utf-8') as f:
+            current_prediction = json.load(f)
+        
+        current_colors = current_prediction['color_counts']
+        current_green = current_colors.get('green', 0)
+        current_red = current_colors.get('red', 0)
+        current_yellow = current_colors.get('yellow', 0)
+        
+        # 确定需要匹配的颜色（只匹配非零的颜色）
+        required_colors = []
+        if current_green > 0:
+            required_colors.append('green')
+        if current_red > 0:
+            required_colors.append('red')
+        if current_yellow > 0:
+            required_colors.append('yellow')
+        
+        print(f"🔍 查找与 {query_date} 相似的日期")
+        print(f"   当天颜色: 绿{current_green} 红{current_red} 黄{current_yellow}")
+        print(f"   必须包含: {', '.join(required_colors)}")
+        
+        # 读取所有历史预判文件
+        prediction_files = glob.glob('data/daily_predictions/prediction_2026-*.json')
+        similar_days = []
+        
+        for pred_file in prediction_files:
+            filename = Path(pred_file).name
+            hist_date = filename.replace('prediction_', '').replace('.json', '')
+            
+            # 跳过当天
+            if hist_date == query_date:
+                continue
+            
+            try:
+                with open(pred_file, 'r', encoding='utf-8') as f:
+                    hist_prediction = json.load(f)
+                
+                hist_colors = hist_prediction['color_counts']
+                hist_green = hist_colors.get('green', 0)
+                hist_red = hist_colors.get('red', 0)
+                hist_yellow = hist_colors.get('yellow', 0)
+                
+                # 检查是否包含所有必需的颜色
+                has_all_colors = True
+                for color in required_colors:
+                    if color == 'green' and hist_green == 0:
+                        has_all_colors = False
+                        break
+                    if color == 'red' and hist_red == 0:
+                        has_all_colors = False
+                        break
+                    if color == 'yellow' and hist_yellow == 0:
+                        has_all_colors = False
+                        break
+                
+                if not has_all_colors:
+                    continue
+                
+                # 计算差值
+                difference = abs(hist_green - current_green) + \
+                           abs(hist_red - current_red) + \
+                           abs(hist_yellow - current_yellow)
+                
+                # 读取当日统计数据（最低点、最高点、最大涨幅）
+                daily_stats = None
+                data_file = Path(f'data/coin_change_tracker/coin_change_{hist_date.replace("-", "")}.jsonl')
+                
+                if data_file.exists():
+                    try:
+                        min_change = float('inf')
+                        max_change = float('-inf')
+                        
+                        with open(data_file, 'r', encoding='utf-8') as df:
+                            for line in df:
+                                record = json.loads(line)
+                                total_change = record.get('total_change')
+                                if total_change is not None:
+                                    min_change = min(min_change, total_change)
+                                    max_change = max(max_change, total_change)
+                        
+                        if min_change != float('inf') and max_change != float('-inf'):
+                            max_increase = max_change - min_change
+                            daily_stats = {
+                                'lowest': round(min_change, 2),
+                                'highest': round(max_change, 2),
+                                'max_increase': round(max_increase, 2)
+                            }
+                    except Exception as e:
+                        print(f"⚠️ 读取{hist_date}统计数据失败: {e}")
+                
+                similar_days.append({
+                    'date': hist_date,
+                    'color_counts': hist_colors,
+                    'signal': hist_prediction.get('signal', ''),
+                    'description': hist_prediction.get('description', ''),
+                    'difference': difference,
+                    'daily_stats': daily_stats
+                })
+                
+            except Exception as e:
+                print(f"⚠️ 读取{pred_file}失败: {e}")
+                continue
+        
+        # 按差值排序
+        similar_days.sort(key=lambda x: x['difference'])
+        
+        # 限制返回数量
+        similar_days = similar_days[:limit]
+        
+        print(f"✅ 找到 {len(similar_days)} 个相似日期")
+        for day in similar_days[:3]:
+            print(f"   {day['date']}: 绿{day['color_counts']['green']} "
+                  f"红{day['color_counts']['red']} 黄{day['color_counts']['yellow']} "
+                  f"差值={day['difference']}")
+        
+        response = make_response(jsonify({
+            'success': True,
+            'query_date': query_date,
+            'current': current_prediction,
+            'similar_days': similar_days
+        }))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        })
+
+
+@app.route('/api/coin-change-tracker/predictions-with-stats', methods=['GET'])
+def get_predictions_with_stats():
+    """获取带统计数据的行情预判（2月份）
+    
+    Returns:
+        {
+            'success': bool,
+            'data': {
+                'period': str,
+                'total_days': int,
+                'signal_groups': {
+                    '信号名称': [
+                        {
+                            'date': str,
+                            'color_counts': dict,
+                            'stats': {
+                                'lowest': float,
+                                'highest': float,
+                                'max_increase': float
+                            },
+                            'description': str
+                        }
+                    ]
+                }
+            }
+        }
+    """
+    try:
+        stats_file = Path('data/daily_predictions/predictions_with_stats.json')
+        
+        if not stats_file.exists():
+            return jsonify({
+                'success': False,
+                'error': '统计文件不存在',
+                'message': '请先运行统计脚本: python3 scripts/analyze_predictions_with_stats.py'
+            })
+        
+        with open(stats_file, 'r', encoding='utf-8') as f:
+            stats_data = json.load(f)
+        
+        response = make_response(jsonify({
+            'success': True,
+            'data': stats_data
         }))
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
@@ -25937,7 +26808,7 @@ def check_top_signal_status(account_id, strategy_type):
 
 @app.route('/api/okx-trading/check-bottom-signal-status/<account_id>/<strategy_type>', methods=['GET'])
 def check_bottom_signal_status(account_id, strategy_type):
-    """检查见底信号策略的执行状态
+    """检查见底信号策略的执行状态（支持按日期分文件）
     strategy_type: 'top8_long' 或 'bottom8_long'
     """
     try:
@@ -25946,49 +26817,82 @@ def check_bottom_signal_status(account_id, strategy_type):
         from datetime import datetime, timedelta
         
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        execution_file = os.path.join(current_dir, 'data', 'okx_bottom_signal_execution', f'{account_id}_bottom_signal_{strategy_type}_execution.jsonl')
+        execution_dir = os.path.join(current_dir, 'data', 'okx_bottom_signal_execution')
         
+        # 优先读取今天日期的文件
+        now = datetime.now()
+        date_str = now.strftime('%Y%m%d')  # 20260226
+        execution_file = os.path.join(execution_dir, f'{account_id}_bottom_signal_{strategy_type}_execution_{date_str}.jsonl')
+        
+        # 如果今天的文件不存在，尝试读取旧格式文件（兼容性）
         if not os.path.exists(execution_file):
-            return jsonify({
-                'success': True,
-                'allowed': True,
-                'reason': '首次执行'
-            })
-        
-        # 读取文件头（第一行）
-        with open(execution_file, 'r', encoding='utf-8') as f:
-            first_line = f.readline().strip()
-            if first_line:
-                header = json.loads(first_line)
-                allowed = header.get('allowed', True)
-                user_disabled = header.get('user_disabled', False)  # 读取用户手动禁用标记
-                timestamp_str = header.get('timestamp', '')
-                
-                # 🔧 修复：区分"用户手动禁用"和"执行后冷却"
-                # 如果是用户手动禁用，则不自动恢复
-                if not user_disabled:
-                    # 检查是否超过1小时冷却期（仅对非手动禁用的情况）
-                    if timestamp_str and not allowed:
-                        try:
-                            last_time = datetime.fromisoformat(timestamp_str)
-                            now = datetime.now()
-                            if (now - last_time).total_seconds() > 3600:  # 1小时 = 3600秒
-                                allowed = True
-                        except:
-                            pass
-                
+            old_execution_file = os.path.join(execution_dir, f'{account_id}_bottom_signal_{strategy_type}_execution.jsonl')
+            if os.path.exists(old_execution_file):
+                execution_file = old_execution_file
+            else:
                 return jsonify({
                     'success': True,
-                    'allowed': allowed,
-                    'user_disabled': user_disabled,
-                    'timestamp': timestamp_str,
-                    'reason': header.get('reason', '')
+                    'allowed': True,
+                    'reason': '今天首次执行',
+                    'has_data_today': False
                 })
+        
+        # 读取文件，从后往前查找最近的执行记录
+        with open(execution_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            if not lines:
+                return jsonify({
+                    'success': True,
+                    'allowed': True,
+                    'reason': '文件为空',
+                    'has_data_today': False
+                })
+            
+            # 从后往前查找最近的记录
+            for line in reversed(lines):
+                line = line.strip()
+                if line:
+                    record = json.loads(line)
+                    timestamp_str = record.get('timestamp', '')
+                    
+                    if timestamp_str:
+                        try:
+                            last_time = datetime.fromisoformat(timestamp_str)
+                            time_diff = (now - last_time).total_seconds()
+                            
+                            # 检查是否在1小时冷却期内
+                            cooldown_seconds = 3600  # 1小时
+                            in_cooldown = time_diff < cooldown_seconds
+                            
+                            return jsonify({
+                                'success': True,
+                                'allowed': not in_cooldown,
+                                'timestamp': timestamp_str,
+                                'time': record.get('time', ''),
+                                'last_execution_time_ago': int(time_diff),
+                                'cooldown_remaining': max(0, int(cooldown_seconds - time_diff)),
+                                'rsi_value': record.get('rsi_value'),
+                                'coins': record.get('coins', []),
+                                'result': record.get('result', {}),
+                                'has_data_today': True
+                            })
+                        except Exception as e:
+                            print(f"解析时间戳失败: {e}")
+                            pass
+                    
+                    # 如果找到记录但没有时间戳，默认允许执行
+                    return jsonify({
+                        'success': True,
+                        'allowed': True,
+                        'reason': '无有效时间戳',
+                        'has_data_today': True
+                    })
         
         return jsonify({
             'success': True,
             'allowed': True,
-            'reason': '文件为空'
+            'reason': '未找到有效记录',
+            'has_data_today': False
         })
         
     except Exception as e:
@@ -26056,6 +26960,61 @@ def set_bottom_signal_strategy_allowed(account_id, strategy_type):
     except Exception as e:
         import traceback
         print(f"❌ Error setting bottom signal allowed: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/okx-trading/bottom-signal-execution-history/<account_id>/<strategy_type>', methods=['GET'])
+def get_bottom_signal_execution_history(account_id, strategy_type):
+    """获取见底信号执行历史记录（按日期分文件，最近7天）
+    strategy_type: 'top8_long' 或 'bottom8_long'
+    """
+    try:
+        import json
+        import os
+        from datetime import datetime, timedelta
+        
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        execution_dir = os.path.join(current_dir, 'data', 'okx_bottom_signal_execution')
+        
+        # 获取最近7天的数据
+        records = []
+        now = datetime.now()
+        
+        for i in range(7):
+            date = now - timedelta(days=i)
+            date_str = date.strftime('%Y%m%d')
+            execution_file = os.path.join(execution_dir, f'{account_id}_bottom_signal_{strategy_type}_execution_{date_str}.jsonl')
+            
+            if os.path.exists(execution_file):
+                try:
+                    with open(execution_file, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        for line in lines:
+                            line = line.strip()
+                            if line:
+                                record = json.loads(line)
+                                record['file_date'] = date_str
+                                records.append(record)
+                except Exception as e:
+                    print(f"读取文件失败 {execution_file}: {e}")
+        
+        # 按时间倒序排序
+        records.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'account_id': account_id,
+            'strategy_type': strategy_type,
+            'total_records': len(records),
+            'records': records
+        })
+        
+    except Exception as e:
+        import traceback
         return jsonify({
             'success': False,
             'error': str(e),
@@ -26322,6 +27281,836 @@ def import_daily_data():
         import traceback
         print(f"❌ 导入数据失败: {str(e)}")
         print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/february-warning-stats')
+def february_warning_stats():
+    """
+    2月份暴跌预警统计可视化页面
+    """
+    try:
+        stats_file = Path('/home/user/webapp/static/february_warning_stats.html')
+        
+        if not stats_file.exists():
+            # 如果文件不存在，先生成
+            import subprocess
+            subprocess.run([
+                'python3',
+                '/home/user/webapp/scripts/generate_warning_chart.py'
+            ], check=True)
+        
+        return send_file(stats_file, mimetype='text/html')
+        
+    except Exception as e:
+        import traceback
+        return f"""
+        <html>
+        <body>
+            <h1>Error loading statistics</h1>
+            <pre>{traceback.format_exc()}</pre>
+        </body>
+        </html>
+        """, 500
+
+
+# ==================== 页面截图API ====================
+
+@app.route('/api/screenshots/latest', methods=['GET'])
+def get_latest_screenshot():
+    """获取最新的截图（30分钟延迟）
+    
+    Returns:
+        {
+            'success': bool,
+            'screenshot': {
+                'filename': str,
+                'timestamp': str,
+                'url': str,
+                'size': int
+            }
+        }
+    """
+    try:
+        from datetime import datetime, timedelta, timezone
+        
+        screenshots_dir = BASE_DIR / 'data' / 'screenshots'
+        
+        if not screenshots_dir.exists():
+            return jsonify({
+                'success': False,
+                'error': '截图目录不存在'
+            })
+        
+        # 获取北京时间
+        utc_now = datetime.now(timezone.utc)
+        beijing_now = utc_now + timedelta(hours=8)
+        target_time = beijing_now - timedelta(minutes=30)
+        
+        # 查找最接近30分钟前的截图
+        screenshots = []
+        for file_path in screenshots_dir.glob("screenshot_*.jpg"):
+            try:
+                filename = file_path.stem
+                timestamp_str = filename.replace('screenshot_', '')
+                file_time = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                
+                screenshots.append({
+                    'filename': file_path.name,
+                    'timestamp': file_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'timestamp_raw': file_time,
+                    'size': file_path.stat().st_size
+                })
+            except:
+                continue
+        
+        if not screenshots:
+            return jsonify({
+                'success': False,
+                'error': '暂无截图数据'
+            })
+        
+        # 找最接近30分钟前的
+        best_match = min(screenshots, 
+                        key=lambda x: abs((x['timestamp_raw'] - target_time).total_seconds()))
+        
+        response = make_response(jsonify({
+            'success': True,
+            'screenshot': {
+                'filename': best_match['filename'],
+                'timestamp': best_match['timestamp'],
+                'url': f"/api/screenshots/image/{best_match['filename']}",
+                'size': best_match['size']
+            }
+        }))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        return response
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/api/screenshots/image/<filename>', methods=['GET'])
+def get_screenshot_image(filename):
+    """获取截图图片文件
+    
+    Args:
+        filename: 截图文件名
+    """
+    try:
+        screenshots_dir = BASE_DIR / 'data' / 'screenshots'
+        file_path = screenshots_dir / filename
+        
+        if not file_path.exists():
+            return jsonify({
+                'success': False,
+                'error': '文件不存在'
+            }), 404
+        
+        response = send_file(
+            file_path,
+            mimetype='image/jpeg',
+            as_attachment=False,
+            download_name=filename
+        )
+        response.headers['Cache-Control'] = 'public, max-age=300'  # 缓存5分钟
+        return response
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/screenshots/list', methods=['GET'])
+def get_screenshots_list():
+    """获取所有截图列表
+    
+    Query Parameters:
+        limit: 限制返回数量（默认100）
+    
+    Returns:
+        {
+            'success': bool,
+            'total': int,
+            'screenshots': [...]
+        }
+    """
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        
+        screenshots_dir = BASE_DIR / 'data' / 'screenshots'
+        
+        if not screenshots_dir.exists():
+            return jsonify({
+                'success': False,
+                'error': '截图目录不存在'
+            })
+        
+        screenshots = []
+        for file_path in screenshots_dir.glob("screenshot_*.jpg"):
+            try:
+                filename = file_path.stem
+                timestamp_str = filename.replace('screenshot_', '')
+                file_time = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                
+                screenshots.append({
+                    'filename': file_path.name,
+                    'timestamp': file_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'timestamp_raw': file_time,
+                    'url': f"/api/screenshots/image/{file_path.name}",
+                    'size': file_path.stat().st_size
+                })
+            except:
+                continue
+        
+        # 按时间倒序
+        screenshots.sort(key=lambda x: x['timestamp_raw'], reverse=True)
+        
+        # 移除raw时间戳
+        for s in screenshots:
+            del s['timestamp_raw']
+        
+        # 限制数量
+        screenshots = screenshots[:limit]
+        
+        response = make_response(jsonify({
+            'success': True,
+            'total': len(screenshots),
+            'screenshots': screenshots
+        }))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        return response
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/screenshots/viewer')
+def screenshot_viewer():
+    """截图查看器页面"""
+    return render_template_string('''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>页面截图查看器（30分钟延迟）</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .screenshot-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .screenshot-container img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #666;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .meta {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .refresh-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .refresh-btn:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖼️ 页面截图查看器</h1>
+        
+        <div class="info">
+            <p><strong>📌 说明：</strong></p>
+            <ul>
+                <li>系统每1分钟自动截图一次</li>
+                <li>显示的是<strong>30分钟前</strong>的截图（延迟30分钟）</li>
+                <li>仅保留最近3小时的数据</li>
+                <li>点击"刷新"按钮查看最新截图</li>
+            </ul>
+        </div>
+        
+        <button class="refresh-btn" onclick="loadLatestScreenshot()">🔄 刷新截图</button>
+        
+        <div id="content">
+            <div class="loading">⏳ 加载中...</div>
+        </div>
+    </div>
+    
+    <script>
+        async function loadLatestScreenshot() {
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">⏳ 加载中...</div>';
+            
+            try {
+                const response = await fetch('/api/screenshots/latest');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const screenshot = result.screenshot;
+                    content.innerHTML = `
+                        <div class="meta">
+                            <p><strong>截图时间：</strong>${screenshot.timestamp}</p>
+                            <p><strong>文件大小：</strong>${(screenshot.size / 1024).toFixed(1)} KB</p>
+                            <p><strong>文件名：</strong>${screenshot.filename}</p>
+                        </div>
+                        <div class="screenshot-container">
+                            <img src="${screenshot.url}" alt="页面截图">
+                        </div>
+                    `;
+                } else {
+                    content.innerHTML = `<div class="error">❌ ${result.error}</div>`;
+                }
+            } catch (error) {
+                content.innerHTML = `<div class="error">❌ 加载失败: ${error.message}</div>`;
+            }
+        }
+        
+        // 页面加载时自动加载截图
+        loadLatestScreenshot();
+        
+        // 每30秒自动刷新
+        setInterval(loadLatestScreenshot, 30000);
+    </script>
+</body>
+</html>
+    ''')
+
+
+@app.route('/api/intraday-patterns/all-detections/<date>', methods=['GET'])
+def get_all_intraday_pattern_detections(date):
+    """获取指定日期的所有日内模式检测（包括满足和不满足条件的）
+    
+    优先从JSONL文件读取，如果文件不存在则实时计算
+    
+    Args:
+        date: 日期字符串 (YYYY-MM-DD)
+        
+    Returns:
+        {
+            'success': bool,
+            'date': str,
+            'qualified_patterns': list,  # 满足触发条件的模式
+            'unqualified_patterns': list,  # 不满足触发条件的模式
+            'summary': dict,
+            'total_change': float,
+            'total_bars': int,
+            'daily_prediction': str
+        }
+    """
+    try:
+        from datetime import datetime, timedelta
+        
+        # 验证日期格式
+        try:
+            datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': '日期格式错误，应为 YYYY-MM-DD'
+            }), 400
+        
+        # 🔥 优先尝试从JSONL文件读取
+        # 优先级1: 监控器实时保存的文件 (detections_xxx.jsonl)
+        detections_file = Path(f'data/intraday_patterns/detections_{date}.jsonl')
+        # 优先级2: 批量生成的汇总文件 (all_detections_xxx.jsonl)
+        all_detections_file = Path(f'data/intraday_patterns/all_detections_{date}.jsonl')
+        
+        # 先尝试读取监控器的实时数据
+        if detections_file.exists():
+            try:
+                qualified_patterns = []
+                unqualified_patterns = []
+                
+                with open(detections_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        try:
+                            record = json.loads(line)
+                            # 监控器记录的数据，按satisfied字段分类
+                            if record.get('satisfied', False):
+                                qualified_patterns.append(record)
+                            else:
+                                unqualified_patterns.append(record)
+                        except json.JSONDecodeError:
+                            continue
+                
+                # 如果有数据，直接返回（监控器数据已包含正确的bars和颜色）
+                if qualified_patterns or unqualified_patterns:
+                    # 获取总涨跌幅和大周期预判
+                    date_no_dash = date.replace('-', '')
+                    data_file = Path(f'data/coin_change_tracker/coin_change_{date_no_dash}.jsonl')
+                    total_change = 0
+                    total_bars = 0
+                    if data_file.exists():
+                        with open(data_file, 'r', encoding='utf-8') as f:
+                            records = [json.loads(line) for line in f if line.strip()]
+                            if records:
+                                total_change = records[-1].get('total_change', 0)
+                    
+                    # 获取预判
+                    pred_file = Path(f'data/daily_predictions/prediction_{date_no_dash}.jsonl')
+                    daily_prediction = ''
+                    if pred_file.exists():
+                        with open(pred_file, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            if lines:
+                                pred_data = json.loads(lines[-1])
+                                daily_prediction = pred_data.get('signal', '')
+                    else:
+                        # 尝试旧格式
+                        pred_file_old = Path(f'data/daily_predictions/prediction_{date}.json')
+                        if pred_file_old.exists():
+                            with open(pred_file_old, 'r', encoding='utf-8') as f:
+                                pred_data = json.load(f)
+                                daily_prediction = pred_data.get('signal', '')
+                    
+                    response = make_response(jsonify({
+                        'success': True,
+                        'date': date,
+                        'qualified_patterns': qualified_patterns,
+                        'unqualified_patterns': unqualified_patterns,
+                        'summary': {
+                            'total_count': len(qualified_patterns) + len(unqualified_patterns),
+                            'qualified_count': len(qualified_patterns),
+                            'unqualified_count': len(unqualified_patterns)
+                        },
+                        'total_change': total_change,
+                        'total_bars': total_bars,
+                        'daily_prediction': daily_prediction
+                    }))
+                    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+                    response.headers['Pragma'] = 'no-cache'
+                    response.headers['Expires'] = '0'
+                    return response
+            except Exception as e:
+                print(f"⚠️ 从监控器detections文件读取失败: {e}")
+        
+        # 再尝试读取批量生成的汇总文件
+        if all_detections_file.exists():
+            try:
+                # 读取所有行并解析
+                qualified_patterns = []
+                unqualified_patterns = []
+                
+                with open(all_detections_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        try:
+                            record = json.loads(line)
+                            
+                            # 判断是汇总记录还是单个模式记录
+                            if 'qualified_patterns' in record and 'unqualified_patterns' in record:
+                                # 这是汇总记录（来自 generate_all_patterns_daily.py）
+                                # 使用最后一个汇总记录
+                                qualified_patterns = record.get('qualified_patterns', [])
+                                unqualified_patterns = record.get('unqualified_patterns', [])
+                                total_change = record.get('total_change', 0)
+                                total_bars = record.get('total_bars', 0)
+                                daily_prediction = record.get('daily_prediction', '')
+                            elif 'pattern_type' in record:
+                                # 这是单个模式记录（来自实时监控器）
+                                if record.get('satisfied', False):
+                                    qualified_patterns.append(record)
+                                else:
+                                    unqualified_patterns.append(record)
+                        except json.JSONDecodeError:
+                            continue
+                
+                # 如果有数据，构建响应
+                if qualified_patterns or unqualified_patterns:
+                    # 获取总涨跌幅和大周期预判（如果不存在则实时计算）
+                    if 'total_change' not in locals() or 'daily_prediction' not in locals():
+                        # 从coin_change数据获取
+                        date_no_dash = date.replace('-', '')
+                        data_file = Path(f'data/coin_change_tracker/coin_change_{date_no_dash}.jsonl')
+                        total_change = 0
+                        total_bars = 0
+                        if data_file.exists():
+                            with open(data_file, 'r', encoding='utf-8') as f:
+                                records = [json.loads(line) for line in f if line.strip()]
+                                if records:
+                                    total_change = records[-1].get('total_change', 0)
+                        
+                        # 获取预判
+                        pred_file = Path(f'data/daily_predictions/prediction_{date}.json')
+                        daily_prediction = ''
+                        if pred_file.exists():
+                            with open(pred_file, 'r', encoding='utf-8') as f:
+                                pred_data = json.load(f)
+                                daily_prediction = pred_data.get('signal', '')
+                    
+                    response = make_response(jsonify({
+                        'success': True,
+                        'date': date,
+                        'qualified_patterns': qualified_patterns,
+                        'unqualified_patterns': unqualified_patterns,
+                        'summary': {
+                            'total_count': len(qualified_patterns) + len(unqualified_patterns),
+                            'qualified_count': len(qualified_patterns),
+                            'unqualified_count': len(unqualified_patterns)
+                        },
+                        'total_change': total_change,
+                        'total_bars': total_bars,
+                        'daily_prediction': daily_prediction,
+                        'source': 'jsonl'  # 标记数据来源
+                    }))
+                    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+                    response.headers['Pragma'] = 'no-cache'
+                    response.headers['Expires'] = '0'
+                    return response
+            except Exception as e:
+                print(f"⚠️ 从JSONL文件读取失败，将实时计算: {e}")
+        
+        # 🔥 如果JSONL文件不存在，则实时计算
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        
+        # 读取数据
+        date_str_no_dash = date.replace('-', '')
+        file_path = Path(f'data/coin_change_tracker/coin_change_{date_str_no_dash}.jsonl')
+        
+        if not file_path.exists():
+            return jsonify({
+                'success': False,
+                'error': f'数据文件不存在: {file_path}'
+            }), 404
+        
+        def calculate_up_ratio(records):
+            """计算上涨占比 - 基于changes字段"""
+            if not records:
+                return 0
+            
+            # 从records中找到最新的一条有changes字段的记录
+            for r in reversed(records):
+                changes = r.get('changes', {})
+                if changes:
+                    # changes是字典：{'BTC': {'change_pct': 5.35, ...}, ...}
+                    total_coins = len(changes)
+                    up_coins = sum(1 for coin_data in changes.values() 
+                                   if isinstance(coin_data, dict) and coin_data.get('change_pct', 0) > 0)
+                    return (up_coins / total_coins * 100) if total_coins > 0 else 0
+            
+            # 如果没有changes字段，使用up_ratio字段（如果存在）
+            for r in reversed(records):
+                if 'up_ratio' in r:
+                    return r['up_ratio']
+            
+            # 最后尝试使用总涨跌幅（不推荐，但作为fallback）
+            up_count = sum(1 for r in records if r.get('total_change', 0) > 0)
+            return (up_count / len(records)) * 100
+        
+        def determine_color(up_ratio):
+            """判断颜色"""
+            if up_ratio == 0:
+                return 'blank', '⚪'
+            elif up_ratio > 55:
+                return 'green', '🟢'
+            elif up_ratio >= 45:
+                return 'yellow', '🟡'
+            else:
+                return 'red', '🔴'
+        
+        # 读取数据
+        records = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    records.append(json.loads(line))
+        
+        # 获取当前涨跌幅总和
+        total_change = records[-1].get('total_change', 0) if records else 0
+        
+        # 获取当日预判
+        daily_prediction = None
+        prediction_file = Path(f'data/daily_predictions/prediction_{date}.json')
+        if prediction_file.exists():
+            try:
+                with open(prediction_file, 'r', encoding='utf-8') as f:
+                    pred_data = json.load(f)
+                    daily_prediction = pred_data.get('signal', '')
+            except:
+                pass
+        
+        # 生成10分钟柱子
+        bars = []
+        beijing_time = datetime.strptime(date, '%Y-%m-%d') + timedelta(hours=23, minutes=59)
+        start_time = datetime.strptime(date, '%Y-%m-%d') + timedelta(hours=2)
+        current_time = start_time
+        
+        while current_time < beijing_time:
+            target_time = current_time.strftime('%H:%M')
+            start_hour, start_min = current_time.hour, current_time.minute
+            
+            interval_records = []
+            for r in records:
+                time_str = r.get('beijing_time') or r.get('time', '')
+                if not time_str:
+                    continue
+                
+                try:
+                    record_time = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                    if record_time.tzinfo is not None:
+                        record_time = record_time.astimezone(None).replace(tzinfo=None) + timedelta(hours=8)
+                    
+                    if record_time.hour == start_hour and start_min <= record_time.minute < start_min + 10:
+                        interval_records.append(r)
+                except:
+                    continue
+            
+            if interval_records:
+                up_ratio = calculate_up_ratio(interval_records)
+                color, emoji = determine_color(up_ratio)
+                
+                bars.append({
+                    'time': target_time,
+                    'up_ratio': up_ratio,
+                    'color': color,
+                    'emoji': emoji
+                })
+            
+            current_time += timedelta(minutes=10)
+        
+        # 检测所有模式（分为满足和不满足条件两类）
+        qualified_patterns = []      # 满足触发条件的
+        unqualified_patterns = []    # 不满足触发条件的
+        
+        # 模式1：红→黄→绿 或 绿→黄→红（3根），红→黄→黄→绿（4根）
+        # 检查4根模式
+        if len(bars) >= 4:
+            for i in range(len(bars) - 3):
+                colors = [bars[i]['color'], bars[i+1]['color'], bars[i+2]['color'], bars[i+3]['color']]
+                
+                if colors == ['red', 'yellow', 'yellow', 'green']:
+                    trigger_ratio = bars[i+3]['up_ratio']
+                    pattern_data = {
+                        'pattern': 'pattern_1',
+                        'pattern_name': '诱多等待新低',
+                        'pattern_type': '红→黄→黄→绿 (4根)',
+                        'signal': '逢高做空',
+                        'time_range': f"{bars[i]['time']}-{bars[i+3]['time']}",
+                        'bars': [
+                            f"{bars[i]['time']} {bars[i]['emoji']} {bars[i]['up_ratio']:.1f}%",
+                            f"{bars[i+1]['time']} {bars[i+1]['emoji']} {bars[i+1]['up_ratio']:.1f}%",
+                            f"{bars[i+2]['time']} {bars[i+2]['emoji']} {bars[i+2]['up_ratio']:.1f}%",
+                            f"{bars[i+3]['time']} {bars[i+3]['emoji']} {bars[i+3]['up_ratio']:.1f}%"
+                        ],
+                        'signal_type': 'short',
+                        'trigger_time': bars[i+3]['time'],
+                        'trigger_ratio': round(trigger_ratio, 2)
+                    }
+                    
+                    if trigger_ratio >= 65:  # 满足条件
+                        qualified_patterns.append(pattern_data)
+                    else:  # 不满足条件
+                        pattern_data['failure_reasons'] = [f'最后一根柱子上涨占比 {trigger_ratio:.2f}% < 65% (需要 ≥65%)']
+                        unqualified_patterns.append(pattern_data)
+        
+        # 检查3根模式
+        if len(bars) >= 3:
+            for i in range(len(bars) - 2):
+                colors = [bars[i]['color'], bars[i+1]['color'], bars[i+2]['color']]
+                
+                # 模式1: 红→黄→绿 或 绿→黄→红
+                if colors == ['red', 'yellow', 'green'] or colors == ['green', 'yellow', 'red']:
+                    pattern_type = "红→黄→绿" if colors == ['red', 'yellow', 'green'] else "绿→黄→红"
+                    trigger_ratio = bars[i+2]['up_ratio']
+                    pattern_data = {
+                        'pattern': 'pattern_1',
+                        'pattern_name': '诱多等待新低',
+                        'pattern_type': f'{pattern_type} (3根)',
+                        'signal': '逢高做空',
+                        'time_range': f"{bars[i]['time']}-{bars[i+2]['time']}",
+                        'bars': [
+                            f"{bars[i]['time']} {bars[i]['emoji']} {bars[i]['up_ratio']:.1f}%",
+                            f"{bars[i+1]['time']} {bars[i+1]['emoji']} {bars[i+1]['up_ratio']:.1f}%",
+                            f"{bars[i+2]['time']} {bars[i+2]['emoji']} {bars[i+2]['up_ratio']:.1f}%"
+                        ],
+                        'signal_type': 'short',
+                        'trigger_time': bars[i+2]['time'],
+                        'trigger_ratio': round(trigger_ratio, 2)
+                    }
+                    
+                    if trigger_ratio >= 65:  # 满足条件
+                        qualified_patterns.append(pattern_data)
+                    else:  # 不满足条件
+                        pattern_data['failure_reasons'] = [f'最后一根柱子上涨占比 {trigger_ratio:.2f}% < 65% (需要 ≥65%)']
+                        unqualified_patterns.append(pattern_data)
+                
+                # 模式3: 黄→绿→黄（筑底信号）
+                if colors == ['yellow', 'green', 'yellow']:
+                    trigger_ratio = bars[i+2]['up_ratio']
+                    pattern_data = {
+                        'pattern': 'pattern_3',
+                        'pattern_name': '筑底信号',
+                        'pattern_type': '黄→绿→黄 (3根)',
+                        'signal': '逢低做多',
+                        'time_range': f"{bars[i]['time']}-{bars[i+2]['time']}",
+                        'bars': [
+                            f"{bars[i]['time']} {bars[i]['emoji']} {bars[i]['up_ratio']:.1f}%",
+                            f"{bars[i+1]['time']} {bars[i+1]['emoji']} {bars[i+1]['up_ratio']:.1f}%",
+                            f"{bars[i+2]['time']} {bars[i+2]['emoji']} {bars[i+2]['up_ratio']:.1f}%"
+                        ],
+                        'signal_type': 'long',
+                        'trigger_time': bars[i+2]['time'],
+                        'trigger_ratio': round(trigger_ratio, 2),
+                        'total_change': round(total_change, 2)
+                    }
+                    
+                    # 新逻辑：只检查涨跌幅总和 < 10%（开仓确认条件）
+                    can_open_position = (total_change < 10)
+                    pattern_data['can_open_position'] = can_open_position
+                    pattern_data['open_condition'] = f"涨跌幅总和{total_change:.2f}% {'<' if can_open_position else '≥'} 10%"
+                    
+                    if can_open_position:  # 满足开仓确认条件
+                        qualified_patterns.append(pattern_data)
+                    else:  # 不满足开仓确认条件（但仍然是有效触发）
+                        pattern_data['failure_reasons'] = [f'涨跌幅总和 {total_change:.2f}% ≥ 10% (未满足开仓确认条件)']
+                        unqualified_patterns.append(pattern_data)
+                
+                # 模式4: 绿→红→绿（诱空信号）
+                if colors == ['green', 'red', 'green']:
+                    middle_ratio = bars[i+1]['up_ratio']
+                    pattern_data = {
+                        'pattern': 'pattern_4',
+                        'pattern_name': '诱空信号',
+                        'pattern_type': '绿→红→绿 (3根)',
+                        'signal': '逢低做多',
+                        'time_range': f"{bars[i]['time']}-{bars[i+2]['time']}",
+                        'bars': [
+                            f"{bars[i]['time']} {bars[i]['emoji']} {bars[i]['up_ratio']:.1f}%",
+                            f"{bars[i+1]['time']} {bars[i+1]['emoji']} {bars[i+1]['up_ratio']:.1f}%",
+                            f"{bars[i+2]['time']} {bars[i+2]['emoji']} {bars[i+2]['up_ratio']:.1f}%"
+                        ],
+                        'signal_type': 'long',
+                        'trigger_time': bars[i+1]['time'],
+                        'trigger_ratio': round(middle_ratio, 2)
+                    }
+                    
+                    if middle_ratio < 10:  # 满足条件
+                        qualified_patterns.append(pattern_data)
+                    else:  # 不满足条件
+                        pattern_data['failure_reasons'] = [f'中间红色柱子上涨占比 {middle_ratio:.2f}% >= 10% (需要 <10%)']
+                        unqualified_patterns.append(pattern_data)
+        
+        # 检查4根模式4（绿→红→红→绿）
+        if len(bars) >= 4:
+            for i in range(len(bars) - 3):
+                colors = [bars[i]['color'], bars[i+1]['color'], bars[i+2]['color'], bars[i+3]['color']]
+                
+                if colors == ['green', 'red', 'red', 'green']:
+                    middle_ratio_1 = bars[i+1]['up_ratio']
+                    middle_ratio_2 = bars[i+2]['up_ratio']
+                    pattern_data = {
+                        'pattern': 'pattern_4',
+                        'pattern_name': '诱空信号',
+                        'pattern_type': '绿→红→红→绿 (4根)',
+                        'signal': '逢低做多',
+                        'time_range': f"{bars[i]['time']}-{bars[i+3]['time']}",
+                        'bars': [
+                            f"{bars[i]['time']} {bars[i]['emoji']} {bars[i]['up_ratio']:.1f}%",
+                            f"{bars[i+1]['time']} {bars[i+1]['emoji']} {bars[i+1]['up_ratio']:.1f}%",
+                            f"{bars[i+2]['time']} {bars[i+2]['emoji']} {bars[i+2]['up_ratio']:.1f}%",
+                            f"{bars[i+3]['time']} {bars[i+3]['emoji']} {bars[i+3]['up_ratio']:.1f}%"
+                        ],
+                        'signal_type': 'long',
+                        'trigger_time': bars[i+1]['time'],
+                        'trigger_ratio': [round(middle_ratio_1, 2), round(middle_ratio_2, 2)]
+                    }
+                    
+                    if middle_ratio_1 < 10 and middle_ratio_2 < 10:  # 满足条件
+                        qualified_patterns.append(pattern_data)
+                    else:  # 不满足条件
+                        pattern_data['failure_reasons'] = [f'中间红色柱子上涨占比 [{middle_ratio_1:.2f}%, {middle_ratio_2:.2f}%] 存在 ≥10% 的情况 (需要全部 <10%)']
+                        unqualified_patterns.append(pattern_data)
+        
+        response = make_response(jsonify({
+            'success': True,
+            'date': date,
+            'total_bars': len(bars),
+            'total_change': round(total_change, 2),
+            'qualified_patterns': qualified_patterns,
+            'unqualified_patterns': unqualified_patterns,
+            'summary': {
+                'qualified_count': len(qualified_patterns),
+                'unqualified_count': len(unqualified_patterns),
+                'total_count': len(qualified_patterns) + len(unqualified_patterns)
+            },
+            'daily_prediction': daily_prediction
+        }))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+        
+    except Exception as e:
+        import traceback
         return jsonify({
             'success': False,
             'error': str(e),
